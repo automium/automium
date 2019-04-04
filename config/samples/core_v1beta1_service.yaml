@@ -1,0 +1,24 @@
+apiVersion: core.automium.io/v1beta1
+kind: Service
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+    app: example
+  name: automium-example
+spec:
+  replicas: 1
+  flavor: "e3standard.x1"
+  version: "1.0.0"
+  tags:
+    - dev
+    - canary
+  env:
+    - name: "username"
+      value: "user1"
+    - name: "password"
+      value: "secret"
+  extra: 
+    - name: "alerting"
+      enabled: false
+    - name: "logging"
+      enabled: true

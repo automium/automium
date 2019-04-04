@@ -1,0 +1,12 @@
+apiVersion: core.automium.io/v1beta1
+kind: Module
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: module-sample
+spec:
+  # Add fields here
+  source: "example"
+  image: "ecs-image 1.0.0"
+  replicas: 1
+  flavor: "e3standard.x1"

@@ -1,0 +1,8 @@
+apiVersion: core.automium.io/v1beta1
+kind: Node
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: node-sample
+spec:
+  hostname: "node-0"
