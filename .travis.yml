@@ -1,0 +1,21 @@
+sudo: required
+services:
+  - docker
+env:
+  global:
+    - IMAGE_NAME=automium/automium
+
+script:
+  - docker build --no-cache --pull --tag "$IMAGE_NAME" .
+
+after_script:
+  - docker images
+
+before_deploy:
+  - docker login -u "$REGISTRY_USER" -p "$REGISTRY_PASS"
+  - docker tag "$IMAGE_NAME" "${IMAGE_NAME}:${TRAVIS_BRANCH}"
+deploy:
+  provider: script
+  script: docker push "${IMAGE_NAME}:${TRAVIS_BRANCH}"
+  on:
+    branch: master
