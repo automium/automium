@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"regexp"
 	"sort"
@@ -121,6 +122,69 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		})
 	}
 
+	// Select the cloud provider to use (defaults to openstack)
+	var cloudPlatform string
+
+	switch os.Getenv("PLATFORM") {
+	case "vcd":
+		cloudPlatform = "vcd"
+	case "vsphere":
+		cloudPlatform = "vsphere"
+	case "aws":
+		cloudPlatform = "aws"
+	default:
+		cloudPlatform = "openstack"
+	}
+
+	// Append the cloud provider
+	tfEnvVars = append(tfEnvVars, corev1.EnvVar{
+		Name:  "PROVIDER",
+		Value: cloudPlatform,
+	})
+
+	// Prepare provisioner name and specific env variables for specific service
+	var appProvisioner string
+	var specificEnvVars []corev1.EnvVar
+
+	switch instance.ObjectMeta.Labels["app"] {
+	case "kubernetes-cluster":
+		specificEnvVars = []corev1.EnvVar{
+			{
+				Name:  "MASTER",
+				Value: "true",
+			},
+			{
+				Name:  "NODE",
+				Value: "false",
+			},
+			{
+				Name:  "ETCD",
+				Value: "true",
+			},
+		}
+		appProvisioner = "kubernetes"
+	case "kubernetes-nodepool":
+		specificEnvVars = []corev1.EnvVar{
+			{
+				Name:  "MASTER",
+				Value: "false",
+			},
+			{
+				Name:  "NODE",
+				Value: "true",
+			},
+			{
+				Name:  "ETCD",
+				Value: "false",
+			},
+		}
+		appProvisioner = "kubernetes"
+	default:
+		appProvisioner = instance.ObjectMeta.Labels["app"]
+	}
+	// Append new prepared variables
+	tfEnvVars = append(tfEnvVars, specificEnvVars...)
+
 	// Define the desired Module object
 	deploy := &corev1beta1.Module{
 		ObjectMeta: metav1.ObjectMeta{
@@ -128,7 +192,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 			Namespace: instance.Namespace,
 		},
 		Spec: corev1beta1.ModuleSpec{
-			Source:   instance.ObjectMeta.Labels["app"],
+			Source:   appProvisioner,
 			Image:    "ecs-image " + instance.Spec.Version,
 			Flavor:   instance.Spec.Flavor,
 			Replicas: instance.Spec.Replicas,

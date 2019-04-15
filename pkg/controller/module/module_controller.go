@@ -19,7 +19,6 @@ package module
 import (
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
@@ -124,17 +123,6 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		Value: instance.Spec.Flavor,
 	})
 
-	// Select the provider to use (defaults to openstack)
-	cloudPlatform := "openstack"
-	switch os.Getenv("PLATFORM") {
-	case "vcd":
-		cloudPlatform = "vcd"
-	case "vsphere":
-		cloudPlatform = "vsphere"
-	case "aws":
-		cloudPlatform = "aws"
-	}
-
 	var retryCount int32 = 1
 	// Define the desired Job object
 	deploy := &batchv1.Job{
@@ -149,7 +137,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 					Containers: []corev1.Container{
 						{
 							Name:            "provisioner",
-							Image:           fmt.Sprintf("automium/provisioner:%s", cloudPlatform),
+							Image:           fmt.Sprintf("automium/service-%s:latest", instance.Spec.Source),
 							ImagePullPolicy: "Always",
 							Command:         jobCommand,
 							EnvFrom:         []corev1.EnvFromSource{provisioner},
