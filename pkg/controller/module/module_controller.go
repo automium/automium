@@ -121,6 +121,9 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	batchEnvVars := append(instance.Spec.Env, corev1.EnvVar{
 		Name:  "SVC_FLAVOR",
 		Value: instance.Spec.Flavor,
+	}, corev1.EnvVar{
+		Name:  "QUANTITY",
+		Value: fmt.Sprintf("%d", instance.Spec.Replicas),
 	})
 
 	var retryCount int32 = 1
