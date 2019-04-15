@@ -136,11 +136,17 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		cloudPlatform = "openstack"
 	}
 
-	// Append the cloud provider
-	tfEnvVars = append(tfEnvVars, corev1.EnvVar{
-		Name:  "PROVIDER",
-		Value: cloudPlatform,
-	})
+	// Append the cloud provider and name
+	tfEnvVars = append(tfEnvVars,
+		corev1.EnvVar{
+			Name:  "PROVIDER",
+			Value: cloudPlatform,
+		},
+		corev1.EnvVar{
+			Name:  "NAME",
+			Value: instance.Name,
+		},
+	)
 
 	// Prepare provisioner name and specific env variables for specific service
 	var appProvisioner string
@@ -197,7 +203,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		},
 		Spec: corev1beta1.ModuleSpec{
 			Source:   appProvisioner,
-			Image:    "ecs-image " + instance.Spec.Version,
+			Image:    fmt.Sprintf("%s-%s", appProvisioner, instance.Spec.Version),
 			Flavor:   instance.Spec.Flavor,
 			Replicas: instance.Spec.Replicas,
 			Env:      tfEnvVars,

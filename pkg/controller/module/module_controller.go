@@ -120,17 +120,18 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 
 	batchEnvVars := append(instance.Spec.Env,
 		corev1.EnvVar{
-			Name:  "SVC_FLAVOR",
+			Name:  "FLAVOR",
 			Value: instance.Spec.Flavor,
-		},
-		corev1.EnvVar{
-			Name:  "NAME",
-			Value: instance.Spec.Source,
 		},
 		corev1.EnvVar{
 			Name:  "QUANTITY",
 			Value: fmt.Sprintf("%d", instance.Spec.Replicas),
-		})
+		},
+		corev1.EnvVar{
+			Name:  "IMAGE",
+			Value: instance.Spec.Image,
+		},
+	)
 
 	var retryCount int32 = 1
 	// Define the desired Job object
