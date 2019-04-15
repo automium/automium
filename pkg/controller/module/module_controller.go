@@ -113,18 +113,24 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	// Define the command to be executed by the Job
 	jobCommand := []string{}
 	if instance.Spec.Replicas > 0 {
-		jobCommand = append(jobCommand, "./deploy", instance.Spec.Source, fmt.Sprintf("%d", instance.Spec.Replicas))
+		jobCommand = append(jobCommand, "./deploy")
 	} else {
-		jobCommand = append(jobCommand, "./remove", instance.Spec.Source, fmt.Sprintf("%d", instance.Spec.Replicas))
+		jobCommand = append(jobCommand, "./remove")
 	}
 
-	batchEnvVars := append(instance.Spec.Env, corev1.EnvVar{
-		Name:  "SVC_FLAVOR",
-		Value: instance.Spec.Flavor,
-	}, corev1.EnvVar{
-		Name:  "QUANTITY",
-		Value: fmt.Sprintf("%d", instance.Spec.Replicas),
-	})
+	batchEnvVars := append(instance.Spec.Env,
+		corev1.EnvVar{
+			Name:  "SVC_FLAVOR",
+			Value: instance.Spec.Flavor,
+		},
+		corev1.EnvVar{
+			Name:  "NAME",
+			Value: instance.Spec.Source,
+		},
+		corev1.EnvVar{
+			Name:  "QUANTITY",
+			Value: fmt.Sprintf("%d", instance.Spec.Replicas),
+		})
 
 	var retryCount int32 = 1
 	// Define the desired Job object
