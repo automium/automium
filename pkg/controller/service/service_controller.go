@@ -161,6 +161,10 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 				Name:  "ETCD",
 				Value: "true",
 			},
+			{
+				Name:  "CLUSTER_NAME",
+				Value: instance.Name,
+			},
 		}
 		appProvisioner = "kubernetes"
 	case "kubernetes-nodepool":
