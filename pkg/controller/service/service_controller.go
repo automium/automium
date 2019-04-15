@@ -270,9 +270,25 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 
 		for i := 0; i < replicasCount; i++ {
 			var specHostname string
-			if appName == "kubernetes" {
-				specHostname = fmt.Sprintf("kubernetes-workers-%d", i)
-			} else {
+			switch appName {
+			case "kubernetes-cluster":
+				specHostname = fmt.Sprintf("%s-%s-%d", instance.Name, instance.Name, i)
+			case "kubernetes-nodepool":
+				var clusterName string
+
+				for _, val := range instance.Spec.Env {
+					if val.Name == "cluster_name" {
+						clusterName = val.Value
+					}
+				}
+
+				if clusterName == "" {
+					glog.Warningln("nodes for Kubenernetes nodepool requested but empty cluster_name provided -- marking as 'nocluster' nodepool")
+					clusterName = "nocluster"
+				}
+
+				specHostname = fmt.Sprintf("%s-%s-%d", clusterName, instance.Name, i)
+			default:
 				specHostname = fmt.Sprintf("%s-%d", appName, i)
 			}
 			r.Create(context.TODO(), &corev1beta1.Node{
