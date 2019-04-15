@@ -113,9 +113,9 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	// Define the command to be executed by the Job
 	jobCommand := []string{}
 	if instance.Spec.Replicas > 0 {
-		jobCommand = append(jobCommand, "./deploy.sh", instance.Spec.Source, fmt.Sprintf("%d", instance.Spec.Replicas))
+		jobCommand = append(jobCommand, "./deploy", instance.Spec.Source, fmt.Sprintf("%d", instance.Spec.Replicas))
 	} else {
-		jobCommand = append(jobCommand, "./remove.sh", instance.Spec.Source, fmt.Sprintf("%d", instance.Spec.Replicas))
+		jobCommand = append(jobCommand, "./remove", instance.Spec.Source, fmt.Sprintf("%d", instance.Spec.Replicas))
 	}
 
 	batchEnvVars := append(instance.Spec.Env, corev1.EnvVar{
