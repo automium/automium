@@ -24,7 +24,6 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -117,7 +116,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	tfEnvVars := make([]corev1.EnvVar, 0)
 	for _, item := range instance.Spec.Env {
 		tfEnvVars = append(tfEnvVars, corev1.EnvVar{
-			Name:  "TF_VAR_" + item.Name,
+			Name:  fmt.Sprintf("TF_VAR_%s", item.Name),
 			Value: item.Value,
 		})
 	}
@@ -198,7 +197,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	// Define the desired Module object
 	deploy := &corev1beta1.Module{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-module",
+			Name:      fmt.Sprintf("%s-module", instance.Name),
 			Namespace: instance.Namespace,
 		},
 		Spec: corev1beta1.ModuleSpec{
@@ -250,16 +249,16 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	// Search for existent nodes for service
 	appNodes := make([]corev1beta1.Node, 0)
 	for _, node := range nsNodes.Items {
-		if strings.HasPrefix(node.Spec.Hostname, appName+"-") {
-			glog.V(2).Infof("add node %s for app %s\n", node.Spec.Hostname, appName)
+		if node.ObjectMeta.Annotations["service.automium.io/name"] == instance.Name {
+			glog.V(2).Infof("found node %s for app %s\n", node.Spec.Hostname, instance.Name)
 			appNodes = append(appNodes, node)
 		}
 	}
 
 	// Special cases (nonexistent, delete all)
-	if instance.Spec.Replicas == 0 {
+	if instance.Spec.Replicas == 0 && len(appNodes) > 0 {
 		// Delete all nodes
-		glog.V(2).Infof("service %s - removing all nodes.\n", appName)
+		glog.V(2).Infof("service %s has no replicas - removing all nodes.\n", instance.Name)
 		for _, item := range appNodes {
 			r.Delete(context.TODO(), &item)
 		}
@@ -301,6 +300,9 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s-node-%d", instance.Name, i),
 					Namespace: instance.Namespace,
+					Annotations: map[string]string{
+						"service.automium.io/name": instance.Name,
+					},
 				},
 				Spec: corev1beta1.NodeSpec{
 					Hostname:     specHostname,
