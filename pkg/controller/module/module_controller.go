@@ -142,7 +142,15 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		},
 		Spec: batchv1.JobSpec{
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"job": instance.Name + "-job"}},
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"job": instance.Name + "-job",
+					},
+					Annotations: map[string]string{
+						"module.automium.io/replicas": fmt.Sprintf("%d", instance.Spec.Replicas),
+						"module.automium.io/flavor":   instance.Spec.Flavor,
+					},
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -179,15 +187,14 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 
 	// The Job already exists.
 	// TODO Wait until the job (pod) is Completed, returning a specific error.
-
 	if len(found.Spec.Template.Spec.Containers) == 0 {
 		glog.Infof("no containers found for the job %s/%s\n", found.Namespace, found.Name)
 		return reconcile.Result{}, nil
 	}
 
-	// Delete the found object and write the result back if there are any changes to the container command
-	if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Command, found.Spec.Template.Spec.Containers[0].Command) {
-		glog.Infof("deleting Job %s/%s\n", deploy.Namespace, deploy.Name)
+	// Check if the job needs to be recreated by comparing the annotations applied by the Module
+	if !reflect.DeepEqual(deploy.Spec.Template.ObjectMeta.Annotations["module.automium.io/replicas"], found.Spec.Template.ObjectMeta.Annotations["module.automium.io/replicas"]) || !reflect.DeepEqual(deploy.Spec.Template.ObjectMeta.Annotations["module.automium.io/flavor"], found.Spec.Template.ObjectMeta.Annotations["module.automium.io/flavor"]) {
+		glog.Infof("replicas and/or flavor updated -- deleting old Job %s/%s\n", deploy.Namespace, deploy.Name)
 		err = r.Delete(context.TODO(), found)
 		if err != nil {
 			return reconcile.Result{}, err
