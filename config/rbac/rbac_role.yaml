@@ -17,6 +17,15 @@ rules:
   - patch
   - delete
 - apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
   - core.automium.io
   resources:
   - modules

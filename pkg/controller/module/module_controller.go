@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
 	"github.com/golang/glog"
@@ -88,6 +89,7 @@ type ReconcileModule struct {
 // and what is in the Module.Spec
 // Automatically generate RBAC rules to allow the Controller to read and write Jobs
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=core.automium.io,resources=modules,verbs=get;list;watch;create;update;patch;delete
 func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	// Fetch the Module instance
@@ -137,7 +139,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	// Define the desired Job object
 	deploy := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-job",
+			Name:      fmt.Sprintf("%s-job", instance.Name),
 			Namespace: instance.Namespace,
 		},
 		Spec: batchv1.JobSpec{
@@ -188,17 +190,42 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	// The Job already exists.
 	// TODO Wait until the job (pod) is Completed, returning a specific error.
 	if len(found.Spec.Template.Spec.Containers) == 0 {
-		glog.Infof("no containers found for the job %s/%s\n", found.Namespace, found.Name)
+		glog.Infof("no containers found for the job %s/%s\n", deploy.Namespace, deploy.Name)
 		return reconcile.Result{}, nil
 	}
 
 	// Check if the job needs to be recreated by comparing the annotations applied by the Module
 	if !reflect.DeepEqual(deploy.Spec.Template.ObjectMeta.Annotations["module.automium.io/replicas"], found.Spec.Template.ObjectMeta.Annotations["module.automium.io/replicas"]) || !reflect.DeepEqual(deploy.Spec.Template.ObjectMeta.Annotations["module.automium.io/flavor"], found.Spec.Template.ObjectMeta.Annotations["module.automium.io/flavor"]) {
-		glog.Infof("replicas and/or flavor updated -- deleting old Job %s/%s\n", deploy.Namespace, deploy.Name)
+
+		// Check if the job is still running
+		if found.Status.Active >= 1 {
+			glog.V(2).Infof("waiting for operate on job %s: it still has running jobs\n", fmt.Sprintf("%s-job", instance.Name))
+			return reconcile.Result{}, fmt.Errorf("job %s is still running", fmt.Sprintf("%s-job", instance.Name))
+		}
+
+		glog.Infof("replicas and/or flavor updated -- deleting old Job %s/%s and its pods\n", deploy.Namespace, deploy.Name)
+		// Cleanup Job pods
+		jobPodList := &corev1.PodList{}
+		err = r.List(context.TODO(), &client.ListOptions{Namespace: deploy.Namespace}, jobPodList)
+		if err != nil {
+			glog.Warningf("cannot list pods: %s -- skipping job pods cleanup\n", err.Error())
+		} else {
+			for _, pod := range jobPodList.Items {
+				if strings.HasPrefix(pod.Name, fmt.Sprintf("%s-job-", instance.Name)) {
+					err = r.Delete(context.TODO(), &pod)
+					if err != nil {
+						glog.Warningf("cannot delete pod %s for job %s: %s\n", pod.Name, fmt.Sprintf("%s-job-", instance.Name), err.Error())
+					}
+				}
+			}
+		}
+
+		// Delete the Job
 		err = r.Delete(context.TODO(), found)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
 	}
+
 	return reconcile.Result{}, nil
 }
