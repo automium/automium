@@ -46,6 +46,7 @@ func TestReconcile(t *testing.T) {
 	instance.Spec = corev1beta1.ModuleSpec{
 		Source: "example",
 		Image:  "ecs-image 1.0.0",
+		Action: "Deploy",
 		Env: []corev1.EnvVar{{
 			Name:  "test",
 			Value: "test",

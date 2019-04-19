@@ -22,6 +22,8 @@ spec:
           type: object
         spec:
           properties:
+            action:
+              type: string
             env:
               items:
                 type: object
@@ -40,6 +42,7 @@ spec:
           - image
           - replicas
           - flavor
+          - action
           type: object
         status:
           type: object
