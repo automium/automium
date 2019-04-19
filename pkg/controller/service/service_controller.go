@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -115,7 +116,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	tfEnvVars := make([]corev1.EnvVar, 0)
 	for _, item := range instance.Spec.Env {
 		tfEnvVars = append(tfEnvVars, corev1.EnvVar{
-			Name:  fmt.Sprintf("TF_VAR_%s", item.Name),
+			Name:  strings.ToUpper(item.Name),
 			Value: item.Value,
 		})
 	}
