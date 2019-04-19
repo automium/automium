@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -218,6 +217,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		glog.Infof("creating module %s/%s\n", deploy.Namespace, deploy.Name)
+		deploy.Spec.Action = "Deploy"
 		err = r.Create(context.TODO(), deploy)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -227,9 +227,10 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	// Update the found object and write the result back if there are any changes
-	if !reflect.DeepEqual(deploy.Spec, found.Spec) {
+	if isModuleDifferent(found, deploy) {
+		glog.V(2).Infof("updating module %s/%s\n", deploy.Namespace, deploy.Name)
+		deploy.Spec.Action = deployAction(found.Spec.Replicas, deploy.Spec.Replicas, found.Spec.Image, deploy.Spec.Image, found.Spec.Flavor, deploy.Spec.Flavor)
 		found.Spec = deploy.Spec
-		glog.Infof("updating module %s/%s\n", deploy.Namespace, deploy.Name)
 		err = r.Update(context.TODO(), found)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -374,4 +375,28 @@ func sortNodesByNumber(nodes []corev1beta1.Node) error {
 		return itm1 < itm2
 	})
 	return globalErr
+}
+
+func deployAction(actualReplicas, nextReplicas int, actualVersion, nextVersion, actualFlavor, nextFlavor string) string {
+	if nextReplicas == 0 {
+		return "Destroy"
+	}
+
+	if actualFlavor == nextFlavor && actualVersion == nextVersion {
+		return "Deploy"
+	}
+
+	if actualReplicas != nextReplicas {
+		return "DeployAndUpgrade"
+	}
+
+	return "Upgrade"
+
+}
+
+func isModuleDifferent(actual, new *corev1beta1.Module) bool {
+	if actual.Spec.Flavor == new.Spec.Flavor && actual.Spec.Image == new.Spec.Image && actual.Spec.Replicas == new.Spec.Replicas {
+		return false
+	}
+	return true
 }

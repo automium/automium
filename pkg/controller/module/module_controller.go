@@ -114,10 +114,18 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 
 	// Define the command to be executed by the Job
 	jobCommand := []string{}
-	if instance.Spec.Replicas > 0 {
+	switch instance.Spec.Action {
+	case "Deploy":
 		jobCommand = append(jobCommand, "./deploy")
-	} else {
+	case "Upgrade":
+		jobCommand = append(jobCommand, "./upgrade")
+	case "DeployAndUpgrade":
+		jobCommand = append(jobCommand, "/bin/sh", "-c", "./deploy && ./upgrade")
+	case "Destroy":
 		jobCommand = append(jobCommand, "./remove")
+	default:
+		glog.Errorf("unknown action for module %s: %s", instance.Name, instance.Spec.Action)
+		return reconcile.Result{}, fmt.Errorf("unknown action for module %s: %s", instance.Name, instance.Spec.Action)
 	}
 
 	batchEnvVars := append(instance.Spec.Env,
@@ -146,11 +154,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"job": instance.Name + "-job",
-					},
-					Annotations: map[string]string{
-						"module.automium.io/replicas": fmt.Sprintf("%d", instance.Spec.Replicas),
-						"module.automium.io/flavor":   instance.Spec.Flavor,
+						"job": fmt.Sprintf("%s-job", instance.Name),
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -194,17 +198,17 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{}, nil
 	}
 
-	// Check if the job needs to be recreated by comparing the annotations applied by the Module
-	if !reflect.DeepEqual(deploy.Spec.Template.ObjectMeta.Annotations["module.automium.io/replicas"], found.Spec.Template.ObjectMeta.Annotations["module.automium.io/replicas"]) || !reflect.DeepEqual(deploy.Spec.Template.ObjectMeta.Annotations["module.automium.io/flavor"], found.Spec.Template.ObjectMeta.Annotations["module.automium.io/flavor"]) {
+	// Check if the job needs to be recreated by comparing the new env and the found job env
+	if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Env, found.Spec.Template.Spec.Containers[0].Env) {
 
 		// Check if the job is still running
 		if found.Status.Active >= 1 {
-			glog.V(2).Infof("waiting for operate on job %s: it still has running jobs\n", fmt.Sprintf("%s-job", instance.Name))
+			glog.V(2).Infof("waiting for operate on job %s: it still has running pods\n", fmt.Sprintf("%s-job", instance.Name))
 			return reconcile.Result{}, fmt.Errorf("job %s is still running", fmt.Sprintf("%s-job", instance.Name))
 		}
 
-		glog.Infof("replicas and/or flavor updated -- deleting old Job %s/%s and its pods\n", deploy.Namespace, deploy.Name)
 		// Cleanup Job pods
+		glog.Infof("deleting old Job %s/%s and its pods\n", deploy.Namespace, deploy.Name)
 		jobPodList := &corev1.PodList{}
 		err = r.List(context.TODO(), &client.ListOptions{Namespace: deploy.Namespace}, jobPodList)
 		if err != nil {
