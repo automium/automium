@@ -229,9 +229,9 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	// Update the found object and write the result back if there are any changes
 	if isModuleDifferent(found, deploy) {
-		glog.V(2).Infof("updating module %s/%s\n", deploy.Namespace, deploy.Name)
-		deploy.Spec.Action = deployAction(found.Spec.Replicas, deploy.Spec.Replicas, found.Spec.Image, deploy.Spec.Image, found.Spec.Flavor, deploy.Spec.Flavor)
+		deploy.Spec.Action = deployAction(found.Spec.Replicas, deploy.Spec.Replicas, found.Spec.Image, deploy.Spec.Image, found.Spec.Flavor, deploy.Spec.Flavor, found.Spec.Env, deploy.Spec.Env)
 		found.Spec = deploy.Spec
+		glog.V(2).Infof("updating module %s/%s -- action:%s\n", deploy.Namespace, deploy.Name, deploy.Spec.Action)
 		err = r.Update(context.TODO(), found)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -378,12 +378,12 @@ func sortNodesByNumber(nodes []corev1beta1.Node) error {
 	return globalErr
 }
 
-func deployAction(actualReplicas, nextReplicas int, actualVersion, nextVersion, actualFlavor, nextFlavor string) string {
+func deployAction(actualReplicas, nextReplicas int, actualVersion, nextVersion, actualFlavor, nextFlavor string, actualEnv, nextEnv []corev1.EnvVar) string {
 	if nextReplicas == 0 {
 		return "Destroy"
 	}
 
-	if actualFlavor == nextFlavor && actualVersion == nextVersion {
+	if actualFlavor == nextFlavor && actualVersion == nextVersion && equalEnvVars(actualEnv, nextEnv) {
 		return "Deploy"
 	}
 
@@ -396,8 +396,24 @@ func deployAction(actualReplicas, nextReplicas int, actualVersion, nextVersion, 
 }
 
 func isModuleDifferent(actual, new *corev1beta1.Module) bool {
-	if actual.Spec.Flavor == new.Spec.Flavor && actual.Spec.Image == new.Spec.Image && actual.Spec.Replicas == new.Spec.Replicas {
+	if actual.Spec.Flavor == new.Spec.Flavor && actual.Spec.Image == new.Spec.Image && actual.Spec.Replicas == new.Spec.Replicas && equalEnvVars(actual.Spec.Env, new.Spec.Env) {
 		return false
 	}
+	return true
+}
+
+func equalEnvVars(oldVars, newVars []corev1.EnvVar) bool {
+	if len(oldVars) != len(newVars) {
+		return false
+	}
+
+	for _, oldVar := range oldVars {
+		for _, newVar := range newVars {
+			if oldVar.Name == newVar.Name && oldVar.Value != newVar.Value {
+				return false
+			}
+		}
+	}
+
 	return true
 }
