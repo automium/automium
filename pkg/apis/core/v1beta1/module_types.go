@@ -38,8 +38,10 @@ type ModuleSpec struct {
 
 // ModuleStatus defines the observed state of Module
 type ModuleStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	Phase           string `json:"phase"`
+	Replicas        int    `json:"replicas"`
+	CurrentReplicas int    `json:"currentReplicas"`
+	UpdatedReplicas int    `json:"updatedReplicas"`
 }
 
 // +genclient
@@ -47,6 +49,7 @@ type ModuleStatus struct {
 
 // Module is the Schema for the modules API
 // +k8s:openapi-gen=true
+// +kubebuilder:subresource:status
 type Module struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

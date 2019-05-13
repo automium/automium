@@ -41,31 +41,23 @@ type NodePropertiesStatusSpec struct {
 	PublicAddress string `json:"publicAddress"`
 }
 
-// NodeServiceStatusSpec contains the basic data of service on a node obtained from Consul
-// type NodeServiceStatusSpec struct {
-// 	ID      string `json:"id"`
-// 	Service string `json:"service"`
-// 	Port    int    `json:"port"`
-// 	Address string `json:"address"`
-// }
-
-// NodeServicesStatusSpec is a struct which contains the service name and the service data obtained from Consul
-// type NodeServicesStatusSpec struct {
-// 	ServiceName string                `json:"serviceName"`
-// 	ServiceData NodeServiceStatusSpec `json:"serviceData"`
-// }
-
 // NodeSpec defines the desired state of Node
 type NodeSpec struct {
 	Hostname     string `json:"hostname"`
 	DeletionDate string `json:"deletionDate"`
 }
 
+// NodeApplicationPropertiesSpec contains the information about the deployed application on the node
+type NodeApplicationPropertiesSpec struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
 // NodeStatus defines the observed state of Node
 type NodeStatus struct {
-	NodeProperties NodePropertiesStatusSpec `json:"nodeProperties,omitempty"`
-	//NodeServices     []NodeServicesStatusSpec    `json:"nodeServices,omitempty"`
-	NodeHealthChecks []NodeHealthCheckStatusSpec `json:"nodeHealthChecks,omitempty"`
+	NodeProperties            NodePropertiesStatusSpec      `json:"nodeProperties,omitempty"`
+	NodeHealthChecks          []NodeHealthCheckStatusSpec   `json:"nodeHealthChecks,omitempty"`
+	NodeApplicationProperties NodeApplicationPropertiesSpec `json:"nodeApplicationProperties,omitempty"`
 }
 
 // +genclient

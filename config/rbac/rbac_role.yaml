@@ -29,6 +29,7 @@ rules:
   - core.automium.io
   resources:
   - modules
+  - modules/status
   verbs:
   - get
   - list

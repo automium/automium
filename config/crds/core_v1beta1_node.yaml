@@ -34,6 +34,16 @@ spec:
           type: object
         status:
           properties:
+            nodeApplicationProperties:
+              properties:
+                name:
+                  type: string
+                version:
+                  type: string
+              required:
+              - name
+              - version
+              type: object
             nodeHealthChecks:
               items:
                 properties:

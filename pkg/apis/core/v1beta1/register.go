@@ -36,3 +36,11 @@ var (
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 )
+
+// Consts which represents the phase statuses
+const (
+	StatusPhasePending   = "Pending"
+	StatusPhaseRunning   = "Running"
+	StatusPhaseCompleted = "Completed"
+	StatusPhaseFailed    = "Failed"
+)

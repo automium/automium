@@ -38,8 +38,6 @@ type ServiceSpec struct {
 
 // ServiceStatus defines the observed state of Service
 type ServiceStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 }
 
 // +genclient
