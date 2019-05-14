@@ -67,6 +67,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	glog.Infoln("node controller initialized")
+
 	return nil
 }
 
