@@ -21,6 +21,7 @@ export default Model.extend({
   EnableTagOverride: attr('boolean'),
   CreateIndex: attr('number'),
   ModifyIndex: attr('number'),
+  // TODO: These should be typed
   ChecksPassing: attr(),
   ChecksCritical: attr(),
   ChecksWarning: attr(),
@@ -29,6 +30,7 @@ export default Model.extend({
   Node: attr(),
   Service: attr(),
   Checks: attr(),
+  meta: attr(),
   passing: computed('ChecksPassing', 'Checks', function() {
     let num = 0;
     // TODO: use typeof

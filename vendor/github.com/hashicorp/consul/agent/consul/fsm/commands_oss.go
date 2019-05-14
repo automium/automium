@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/armon/go-metrics"
+	metrics "github.com/armon/go-metrics"
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/api"
 )
@@ -14,6 +14,7 @@ func init() {
 	registerCommand(structs.DeregisterRequestType, (*FSM).applyDeregister)
 	registerCommand(structs.KVSRequestType, (*FSM).applyKVSOperation)
 	registerCommand(structs.SessionRequestType, (*FSM).applySessionOperation)
+	// DEPRECATED (ACL-Legacy-Compat) - Only needed for v1 ACL compat
 	registerCommand(structs.ACLRequestType, (*FSM).applyACLOperation)
 	registerCommand(structs.TombstoneRequestType, (*FSM).applyTombstoneOperation)
 	registerCommand(structs.CoordinateBatchUpdateType, (*FSM).applyCoordinateBatchUpdate)
@@ -22,6 +23,19 @@ func init() {
 	registerCommand(structs.AutopilotRequestType, (*FSM).applyAutopilotUpdate)
 	registerCommand(structs.IntentionRequestType, (*FSM).applyIntentionOperation)
 	registerCommand(structs.ConnectCARequestType, (*FSM).applyConnectCAOperation)
+	registerCommand(structs.ACLTokenSetRequestType, (*FSM).applyACLTokenSetOperation)
+	registerCommand(structs.ACLTokenDeleteRequestType, (*FSM).applyACLTokenDeleteOperation)
+	registerCommand(structs.ACLBootstrapRequestType, (*FSM).applyACLTokenBootstrap)
+	registerCommand(structs.ACLPolicySetRequestType, (*FSM).applyACLPolicySetOperation)
+	registerCommand(structs.ACLPolicyDeleteRequestType, (*FSM).applyACLPolicyDeleteOperation)
+	registerCommand(structs.ConnectCALeafRequestType, (*FSM).applyConnectCALeafOperation)
+	registerCommand(structs.ConfigEntryRequestType, (*FSM).applyConfigEntryOperation)
+	registerCommand(structs.ACLRoleSetRequestType, (*FSM).applyACLRoleSetOperation)
+	registerCommand(structs.ACLRoleDeleteRequestType, (*FSM).applyACLRoleDeleteOperation)
+	registerCommand(structs.ACLBindingRuleSetRequestType, (*FSM).applyACLBindingRuleSetOperation)
+	registerCommand(structs.ACLBindingRuleDeleteRequestType, (*FSM).applyACLBindingRuleDeleteOperation)
+	registerCommand(structs.ACLAuthMethodSetRequestType, (*FSM).applyACLAuthMethodSetOperation)
+	registerCommand(structs.ACLAuthMethodDeleteRequestType, (*FSM).applyACLAuthMethodDeleteOperation)
 }
 
 func (c *FSM) applyRegister(buf []byte, index uint64) interface{} {
@@ -134,7 +148,10 @@ func (c *FSM) applySessionOperation(buf []byte, index uint64) interface{} {
 	}
 }
 
+// DEPRECATED (ACL-Legacy-Compat) - Only needed for legacy compat
 func (c *FSM) applyACLOperation(buf []byte, index uint64) interface{} {
+	// TODO (ACL-Legacy-Compat) - Should we warn here somehow about using deprecated features
+	//                            maybe emit a second metric?
 	var req structs.ACLRequest
 	if err := structs.Decode(buf, &req); err != nil {
 		panic(fmt.Errorf("failed to decode request: %v", err))
@@ -143,23 +160,35 @@ func (c *FSM) applyACLOperation(buf []byte, index uint64) interface{} {
 		[]metrics.Label{{Name: "op", Value: string(req.Op)}})
 	switch req.Op {
 	case structs.ACLBootstrapInit:
-		enabled, err := c.state.ACLBootstrapInit(index)
+		enabled, _, err := c.state.CanBootstrapACLToken()
 		if err != nil {
 			return err
 		}
 		return enabled
 	case structs.ACLBootstrapNow:
-		if err := c.state.ACLBootstrap(index, &req.ACL); err != nil {
+		// This is a bootstrap request from a non-upgraded node
+		if err := c.state.ACLBootstrap(index, 0, req.ACL.Convert(), true); err != nil {
 			return err
 		}
-		return &req.ACL
+
+		// No need to check expiration times as those did not exist in legacy tokens.
+		if _, token, err := c.state.ACLTokenGetBySecret(nil, req.ACL.ID); err != nil {
+			return err
+		} else {
+			acl, err := token.Convert()
+			if err != nil {
+				return err
+			}
+			return acl
+		}
+
 	case structs.ACLForceSet, structs.ACLSet:
-		if err := c.state.ACLSet(index, &req.ACL); err != nil {
+		if err := c.state.ACLTokenSet(index, req.ACL.Convert(), true); err != nil {
 			return err
 		}
 		return req.ACL.ID
 	case structs.ACLDelete:
-		return c.state.ACLDelete(index, req.ACL.ID)
+		return c.state.ACLTokenDeleteBySecret(index, req.ACL.ID)
 	default:
 		c.logger.Printf("[WARN] consul.fsm: Invalid ACL operation '%s'", req.Op)
 		return fmt.Errorf("Invalid ACL operation '%s'", req.Op)
@@ -319,14 +348,190 @@ func (c *FSM) applyConnectCAOperation(buf []byte, index uint64) interface{} {
 		if err != nil {
 			return err
 		}
-
-		if err := c.state.CASetConfig(index+1, req.Config); err != nil {
-			return err
+		if !act {
+			return act
 		}
 
+		act, err = c.state.CACheckAndSetConfig(index+1, req.Config.ModifyIndex, req.Config)
+		if err != nil {
+			return err
+		}
 		return act
 	default:
 		c.logger.Printf("[WARN] consul.fsm: Invalid CA operation '%s'", req.Op)
 		return fmt.Errorf("Invalid CA operation '%s'", req.Op)
 	}
+}
+
+func (c *FSM) applyConnectCALeafOperation(buf []byte, index uint64) interface{} {
+	var req structs.CALeafRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "ca", "leaf"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: string(req.Op)}})
+	switch req.Op {
+	case structs.CALeafOpIncrementIndex:
+		if err := c.state.CALeafSetIndex(index); err != nil {
+			return err
+		}
+		return index
+	default:
+		c.logger.Printf("[WARN consul.fsm: Invalid CA Leaf operation '%s'", req.Op)
+		return fmt.Errorf("Invalid CA operation '%s'", req.Op)
+	}
+}
+
+func (c *FSM) applyACLTokenSetOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLTokenBatchSetRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "token"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "upsert"}})
+
+	return c.state.ACLTokenBatchSet(index, req.Tokens, req.CAS, req.AllowMissingLinks, req.ProhibitUnprivileged)
+}
+
+func (c *FSM) applyACLTokenDeleteOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLTokenBatchDeleteRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "token"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "delete"}})
+
+	return c.state.ACLTokenBatchDelete(index, req.TokenIDs)
+}
+
+func (c *FSM) applyACLTokenBootstrap(buf []byte, index uint64) interface{} {
+	var req structs.ACLTokenBootstrapRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "token"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "bootstrap"}})
+	return c.state.ACLBootstrap(index, req.ResetIndex, &req.Token, false)
+}
+
+func (c *FSM) applyACLPolicySetOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLPolicyBatchSetRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "policy"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "upsert"}})
+
+	return c.state.ACLPolicyBatchSet(index, req.Policies)
+}
+
+func (c *FSM) applyACLPolicyDeleteOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLPolicyBatchDeleteRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "policy"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "delete"}})
+
+	return c.state.ACLPolicyBatchDelete(index, req.PolicyIDs)
+}
+
+func (c *FSM) applyConfigEntryOperation(buf []byte, index uint64) interface{} {
+	req := structs.ConfigEntryRequest{
+		Entry: &structs.ProxyConfigEntry{},
+	}
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+
+	switch req.Op {
+	case structs.ConfigEntryUpsertCAS:
+		defer metrics.MeasureSinceWithLabels([]string{"fsm", "config_entry", req.Entry.GetKind()}, time.Now(),
+			[]metrics.Label{{Name: "op", Value: "upsert"}})
+		updated, err := c.state.EnsureConfigEntryCAS(index, req.Entry.GetRaftIndex().ModifyIndex, req.Entry)
+		if err != nil {
+			return err
+		}
+		return updated
+	case structs.ConfigEntryUpsert:
+		defer metrics.MeasureSinceWithLabels([]string{"fsm", "config_entry", req.Entry.GetKind()}, time.Now(),
+			[]metrics.Label{{Name: "op", Value: "upsert"}})
+		if err := c.state.EnsureConfigEntry(index, req.Entry); err != nil {
+			return err
+		}
+		return true
+	case structs.ConfigEntryDelete:
+		defer metrics.MeasureSinceWithLabels([]string{"fsm", "config_entry", req.Entry.GetKind()}, time.Now(),
+			[]metrics.Label{{Name: "op", Value: "delete"}})
+		return c.state.DeleteConfigEntry(index, req.Entry.GetKind(), req.Entry.GetName())
+	default:
+		return fmt.Errorf("invalid config entry operation type: %v", req.Op)
+	}
+}
+
+func (c *FSM) applyACLRoleSetOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLRoleBatchSetRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "role"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "upsert"}})
+
+	return c.state.ACLRoleBatchSet(index, req.Roles, req.AllowMissingLinks)
+}
+
+func (c *FSM) applyACLRoleDeleteOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLRoleBatchDeleteRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "role"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "delete"}})
+
+	return c.state.ACLRoleBatchDelete(index, req.RoleIDs)
+}
+
+func (c *FSM) applyACLBindingRuleSetOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLBindingRuleBatchSetRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "bindingrule"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "upsert"}})
+
+	return c.state.ACLBindingRuleBatchSet(index, req.BindingRules)
+}
+
+func (c *FSM) applyACLBindingRuleDeleteOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLBindingRuleBatchDeleteRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "bindingrule"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "delete"}})
+
+	return c.state.ACLBindingRuleBatchDelete(index, req.BindingRuleIDs)
+}
+
+func (c *FSM) applyACLAuthMethodSetOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLAuthMethodBatchSetRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "authmethod"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "upsert"}})
+
+	return c.state.ACLAuthMethodBatchSet(index, req.AuthMethods)
+}
+
+func (c *FSM) applyACLAuthMethodDeleteOperation(buf []byte, index uint64) interface{} {
+	var req structs.ACLAuthMethodBatchDeleteRequest
+	if err := structs.Decode(buf, &req); err != nil {
+		panic(fmt.Errorf("failed to decode request: %v", err))
+	}
+	defer metrics.MeasureSinceWithLabels([]string{"fsm", "acl", "authmethod"}, time.Now(),
+		[]metrics.Label{{Name: "op", Value: "delete"}})
+
+	return c.state.ACLAuthMethodBatchDelete(index, req.AuthMethodNames)
 }

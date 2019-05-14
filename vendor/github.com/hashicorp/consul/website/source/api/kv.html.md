@@ -33,10 +33,10 @@ For multi-key reads, please consider using [transaction](/api/txn.html).
 | `GET`  | `/kv/:key`                   | `application/json`         |
 
 The table below shows this endpoint's support for
-[blocking queries](/api/index.html#blocking-queries),
-[consistency modes](/api/index.html#consistency-modes),
-[agent caching](/api/index.html#agent-caching), and
-[required ACLs](/api/index.html#acls).
+[blocking queries](/api/features/blocking.html),
+[consistency modes](/api/features/consistency.html),
+[agent caching](/api/features/caching.html), and
+[required ACLs](/api/index.html#authentication).
 
 | Blocking Queries | Consistency Modes | Agent Caching | ACL Required |
 | ---------------- | ----------------- | ------------- | ------------ |
@@ -62,9 +62,10 @@ The table below shows this endpoint's support for
   metadata). Specifying this implies `recurse`. This is specified as part of the
   URL as a query parameter.
 
-- `separator` `(string: '/')` - Specifies the character to use as a separator
-  for recursive lookups. This is specified as part of the URL as a query
-  parameter.
+- `separator` `(string: '/')` - Specifies the string to use as a separator
+  for recursive key lookups. This option is only used when paired with the `keys` 
+  parameter to limit the prefix of keys returned,  only up to the given separator. 
+  This is specified as part of the URL as a query parameter.
 
 ### Sample Request
 
@@ -154,10 +155,10 @@ Even though the return type is `application/json`, the value is either `true` or
 `false`, indicating whether the create/update succeeded.
 
 The table below shows this endpoint's support for
-[blocking queries](/api/index.html#blocking-queries),
-[consistency modes](/api/index.html#consistency-modes),
-[agent caching](/api/index.html#agent-caching), and
-[required ACLs](/api/index.html#acls).
+[blocking queries](/api/features/blocking.html),
+[consistency modes](/api/features/consistency.html),
+[agent caching](/api/features/caching.html), and
+[required ACLs](/api/index.html#authentication).
 
 | Blocking Queries | Consistency Modes | Agent Caching | ACL Required |
 | ---------------- | ----------------- | ------------- | ------------ |
@@ -181,8 +182,8 @@ The table below shows this endpoint's support for
   index is non-zero, the key is only set if the index matches the `ModifyIndex`
   of that key.
 
-- `acquire` `(string: "")` - Specifies to use a lock acquisition operation. This
-  is useful as it allows leader election to be built on top of Consul. If the
+- `acquire` `(string: "")` - Supply a session ID to use in a lock acquisition operation.
+  This is useful as it allows leader election to be built on top of Consul. If the
   lock is not held and the session is valid, this increments the `LockIndex` and
   sets the `Session` value of the key in addition to updating the key contents.
   A key does not need to exist to be acquired. If the lock is already held by
@@ -195,7 +196,7 @@ The table below shows this endpoint's support for
     For an example of how to use the lock feature, see the [Leader Election Guide]
     (/docs/guides/leader-election.html).
 
-- `release` `(string: "")` - Specifies to use a lock release operation. This is
+- `release` `(string: "")` - Supply a session ID to use in a release operation. This is
   useful when paired with `?acquire=` as it allows clients to yield a lock. This
   will leave the `LockIndex` unmodified but will clear the associated `Session`
   of the key. The key must be held by this session to be unlocked.
@@ -235,10 +236,10 @@ This endpoint deletes a single key or all keys sharing a prefix.
 | `DELETE` | `/kv/:key`                   | `application/json`         |
 
 The table below shows this endpoint's support for
-[blocking queries](/api/index.html#blocking-queries),
-[consistency modes](/api/index.html#consistency-modes),
-[agent caching](/api/index.html#agent-caching), and
-[required ACLs](/api/index.html#acls).
+[blocking queries](/api/features/blocking.html),
+[consistency modes](/api/features/consistency.html),
+[agent caching](/api/features/caching.html), and
+[required ACLs](/api/index.html#authentication).
 
 | Blocking Queries | Consistency Modes | Agent Caching | ACL Required |
 | ---------------- | ----------------- | ------------- | ------------ |

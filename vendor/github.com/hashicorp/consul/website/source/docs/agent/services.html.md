@@ -30,6 +30,7 @@ example shows all possible fields, but note that only a few are required.
 ```javascript
 {
   "service": {
+    "id": "redis",
     "name": "redis",
     "tags": ["primary"],
     "address": "",
@@ -49,11 +50,11 @@ example shows all possible fields, but note that only a few are required.
     "proxy": {
       "destination_service_name": "redis",
       "destination_service_id": "redis1",
-      "local_service_name": "127.0.0.1",
+      "local_service_address": "127.0.0.1",
       "local_service_port": 9090,
       "config": {},
       "upstreams": []
-    }
+    },
     "connect": {
       "native": false,
       "sidecar_service": {}
@@ -65,7 +66,8 @@ example shows all possible fields, but note that only a few are required.
     "weights": {
       "passing": 5,
       "warning": 1
-    }
+    },
+    "token": "233b604b-b92e-48c8-a253-5f11514e4b50"
   }
 }
 ```

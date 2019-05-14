@@ -2,21 +2,24 @@ package structs
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/hashicorp/go-msgpack/codec"
+	multierror "github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/serf/coordinate"
+	"github.com/mitchellh/hashstructure"
+
 	"github.com/hashicorp/consul/agent/cache"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/types"
-	"github.com/hashicorp/go-msgpack/codec"
-	"github.com/hashicorp/go-multierror"
-	"github.com/hashicorp/serf/coordinate"
-	"github.com/mitchellh/hashstructure"
 )
 
 type MessageType uint8
@@ -24,29 +27,42 @@ type MessageType uint8
 // RaftIndex is used to track the index used while creating
 // or modifying a given struct type.
 type RaftIndex struct {
-	CreateIndex uint64
-	ModifyIndex uint64
+	CreateIndex uint64 `bexpr:"-"`
+	ModifyIndex uint64 `bexpr:"-"`
 }
 
 // These are serialized between Consul servers and stored in Consul snapshots,
 // so entries must only ever be added.
 const (
-	RegisterRequestType        MessageType = 0
-	DeregisterRequestType                  = 1
-	KVSRequestType                         = 2
-	SessionRequestType                     = 3
-	ACLRequestType                         = 4
-	TombstoneRequestType                   = 5
-	CoordinateBatchUpdateType              = 6
-	PreparedQueryRequestType               = 7
-	TxnRequestType                         = 8
-	AutopilotRequestType                   = 9
-	AreaRequestType                        = 10
-	ACLBootstrapRequestType                = 11 // FSM snapshots only.
-	IntentionRequestType                   = 12
-	ConnectCARequestType                   = 13
-	ConnectCAProviderStateType             = 14
-	ConnectCAConfigType                    = 15 // FSM snapshots only.
+	RegisterRequestType             MessageType = 0
+	DeregisterRequestType                       = 1
+	KVSRequestType                              = 2
+	SessionRequestType                          = 3
+	ACLRequestType                              = 4 // DEPRECATED (ACL-Legacy-Compat)
+	TombstoneRequestType                        = 5
+	CoordinateBatchUpdateType                   = 6
+	PreparedQueryRequestType                    = 7
+	TxnRequestType                              = 8
+	AutopilotRequestType                        = 9
+	AreaRequestType                             = 10
+	ACLBootstrapRequestType                     = 11
+	IntentionRequestType                        = 12
+	ConnectCARequestType                        = 13
+	ConnectCAProviderStateType                  = 14
+	ConnectCAConfigType                         = 15 // FSM snapshots only.
+	IndexRequestType                            = 16 // FSM snapshots only.
+	ACLTokenSetRequestType                      = 17
+	ACLTokenDeleteRequestType                   = 18
+	ACLPolicySetRequestType                     = 19
+	ACLPolicyDeleteRequestType                  = 20
+	ConnectCALeafRequestType                    = 21
+	ConfigEntryRequestType                      = 22
+	ACLRoleSetRequestType                       = 23
+	ACLRoleDeleteRequestType                    = 24
+	ACLBindingRuleSetRequestType                = 25
+	ACLBindingRuleDeleteRequestType             = 26
+	ACLAuthMethodSetRequestType                 = 27
+	ACLAuthMethodDeleteRequestType              = 28
 )
 
 const (
@@ -95,7 +111,7 @@ type RPCInfo interface {
 	RequestDatacenter() string
 	IsRead() bool
 	AllowStaleRead() bool
-	ACLToken() string
+	TokenSecret() string
 }
 
 // QueryOptions is used to specify various flags for read queries
@@ -137,7 +153,7 @@ type QueryOptions struct {
 	// If there is a cached response that is older than the MaxAge, it is treated
 	// as a cache miss and a new fetch invoked. If the fetch fails, the error is
 	// returned. Clients that wish to allow for stale results on error can set
-	// StaleIfError to a longer duration to change this behaviour. It is ignored
+	// StaleIfError to a longer duration to change this behavior. It is ignored
 	// if the endpoint supports background refresh caching. See
 	// https://www.consul.io/api/index.html#agent-caching for more details.
 	MaxAge time.Duration
@@ -155,6 +171,10 @@ type QueryOptions struct {
 	// ignored if the endpoint supports background refresh caching. See
 	// https://www.consul.io/api/index.html#agent-caching for more details.
 	StaleIfError time.Duration
+
+	// Filter specifies the go-bexpr filter expression to be used for
+	// filtering the data prior to returning a response
+	Filter string
 }
 
 // IsRead is always true for QueryOption.
@@ -177,7 +197,7 @@ func (q QueryOptions) AllowStaleRead() bool {
 	return q.AllowStale
 }
 
-func (q QueryOptions) ACLToken() string {
+func (q QueryOptions) TokenSecret() string {
 	return q.Token
 }
 
@@ -196,7 +216,7 @@ func (w WriteRequest) AllowStaleRead() bool {
 	return false
 }
 
-func (w WriteRequest) ACLToken() string {
+func (w WriteRequest) TokenSecret() string {
 	return w.Token
 }
 
@@ -323,10 +343,13 @@ func (r *DCSpecificRequest) CacheInfo() cache.RequestInfo {
 		MustRevalidate: r.MustRevalidate,
 	}
 
-	// To calculate the cache key we only hash the node filters. The
-	// datacenter is handled by the cache framework. The other fields are
+	// To calculate the cache key we only hash the node meta filters and the bexpr filter.
+	// The datacenter is handled by the cache framework. The other fields are
 	// not, but should not be used in any cache types.
-	v, err := hashstructure.Hash(r.NodeMetaFilters, nil)
+	v, err := hashstructure.Hash([]interface{}{
+		r.NodeMetaFilters,
+		r.Filter,
+	}, nil)
 	if err == nil {
 		// If there is an error, we don't set the key. A blank key forces
 		// no cache for this request so the request is forwarded directly
@@ -346,11 +369,13 @@ type ServiceSpecificRequest struct {
 	Datacenter      string
 	NodeMetaFilters map[string]string
 	ServiceName     string
-	ServiceTag      string
-	ServiceTags     []string
-	ServiceAddress  string
-	TagFilter       bool // Controls tag filtering
-	Source          QuerySource
+	// DEPRECATED (singular-service-tag) - remove this when backwards RPC compat
+	// with 1.2.x is not required.
+	ServiceTag     string
+	ServiceTags    []string
+	ServiceAddress string
+	TagFilter      bool // Controls tag filtering
+	Source         QuerySource
 
 	// Connect if true will only search for Connect-compatible services.
 	Connect bool
@@ -379,13 +404,23 @@ func (r *ServiceSpecificRequest) CacheInfo() cache.RequestInfo {
 	// cached results, we need to be careful we maintain the same order of fields
 	// here. We could alternatively use `hash:set` struct tag on an anonymous
 	// struct to make it more robust if it becomes significant.
+	sort.Strings(r.ServiceTags)
 	v, err := hashstructure.Hash([]interface{}{
 		r.NodeMetaFilters,
 		r.ServiceName,
+		// DEPRECATED (singular-service-tag) - remove this when upgrade RPC compat
+		// with 1.2.x is not required. We still need this in because <1.3 agents
+		// might still send RPCs with singular tag set. In fact the only place we
+		// use this method is in agent cache so if the agent is new enough to have
+		// this code this should never be set, but it's safer to include it until we
+		// completely remove this field just in case it's erroneously used anywhere
+		// (e.g. until this change DNS still used it).
 		r.ServiceTag,
+		r.ServiceTags,
 		r.ServiceAddress,
 		r.TagFilter,
 		r.Connect,
+		r.Filter,
 	}, nil)
 	if err == nil {
 		// If there is an error, we don't set the key. A blank key forces
@@ -412,6 +447,30 @@ func (r *NodeSpecificRequest) RequestDatacenter() string {
 	return r.Datacenter
 }
 
+func (r *NodeSpecificRequest) CacheInfo() cache.RequestInfo {
+	info := cache.RequestInfo{
+		Token:          r.Token,
+		Datacenter:     r.Datacenter,
+		MinIndex:       r.MinQueryIndex,
+		Timeout:        r.MaxQueryTime,
+		MaxAge:         r.MaxAge,
+		MustRevalidate: r.MustRevalidate,
+	}
+
+	v, err := hashstructure.Hash([]interface{}{
+		r.Node,
+		r.Filter,
+	}, nil)
+	if err == nil {
+		// If there is an error, we don't set the key. A blank key forces
+		// no cache for this request so the request is forwarded directly
+		// to the server.
+		info.Key = strconv.FormatUint(v, 10)
+	}
+
+	return info
+}
+
 // ChecksInStateRequest is used to query for nodes in a state
 type ChecksInStateRequest struct {
 	Datacenter      string
@@ -434,7 +493,7 @@ type Node struct {
 	TaggedAddresses map[string]string
 	Meta            map[string]string
 
-	RaftIndex
+	RaftIndex `bexpr:"-"`
 }
 type Nodes []*Node
 
@@ -537,11 +596,11 @@ type ServiceNode struct {
 	ServicePort              int
 	ServiceEnableTagOverride bool
 	// DEPRECATED (ProxyDestination) - remove this when removing ProxyDestination
-	ServiceProxyDestination string
+	ServiceProxyDestination string `bexpr:"-"`
 	ServiceProxy            ConnectProxyConfig
 	ServiceConnect          ServiceConnect
 
-	RaftIndex
+	RaftIndex `bexpr:"-"`
 }
 
 // PartialClone() returns a clone of the given service node, minus the node-
@@ -652,7 +711,7 @@ type NodeService struct {
 	// may be a service that isn't present in the catalog. This is expected and
 	// allowed to allow for proxies to come up earlier than their target services.
 	// DEPRECATED (ProxyDestination) - remove this when removing ProxyDestination
-	ProxyDestination string
+	ProxyDestination string `bexpr:"-"`
 
 	// Proxy is the configuration set for Kind = connect-proxy. It is mandatory in
 	// that case and an error to be set for any other kind. This config is part of
@@ -687,9 +746,9 @@ type NodeService struct {
 	// internal only. Right now our agent endpoints return api structs which don't
 	// include it but this is a safety net incase we change that or there is
 	// somewhere this is used in API output.
-	LocallyRegisteredAsSidecar bool `json:"-"`
+	LocallyRegisteredAsSidecar bool `json:"-" bexpr:"-"`
 
-	RaftIndex
+	RaftIndex `bexpr:"-"`
 }
 
 // ServiceConnect are the shared Connect settings between all service
@@ -701,7 +760,7 @@ type ServiceConnect struct {
 	// Proxy configures a connect proxy instance for the service. This is
 	// only used for agent service definitions and is invalid for non-agent
 	// (catalog API) definitions.
-	Proxy *ServiceDefinitionConnectProxy `json:",omitempty"`
+	Proxy *ServiceDefinitionConnectProxy `json:",omitempty" bexpr:"-"`
 
 	// SidecarService is a nested Service Definition to register at the same time.
 	// It's purely a convenience mechanism to allow specifying a sidecar service
@@ -710,7 +769,12 @@ type ServiceConnect struct {
 	// boilerplate needed to register a sidecar service separately, but the end
 	// result is identical to just making a second service registration via any
 	// other means.
-	SidecarService *ServiceDefinition `json:",omitempty"`
+	SidecarService *ServiceDefinition `json:",omitempty" bexpr:"-"`
+}
+
+// IsSidecarProxy returns true if the NodeService is a sidecar proxy.
+func (s *NodeService) IsSidecarProxy() bool {
+	return s.Kind == ServiceKindConnectProxy && s.Proxy.DestinationServiceID != ""
 }
 
 // Validate validates the node service configuration.
@@ -882,20 +946,78 @@ type HealthCheck struct {
 	ServiceName string        // optional service name
 	ServiceTags []string      // optional service tags
 
-	Definition HealthCheckDefinition
+	Definition HealthCheckDefinition `bexpr:"-"`
 
-	RaftIndex
+	RaftIndex `bexpr:"-"`
 }
 
 type HealthCheckDefinition struct {
-	HTTP                           string               `json:",omitempty"`
-	TLSSkipVerify                  bool                 `json:",omitempty"`
-	Header                         map[string][]string  `json:",omitempty"`
-	Method                         string               `json:",omitempty"`
-	TCP                            string               `json:",omitempty"`
-	Interval                       api.ReadableDuration `json:",omitempty"`
-	Timeout                        api.ReadableDuration `json:",omitempty"`
-	DeregisterCriticalServiceAfter api.ReadableDuration `json:",omitempty"`
+	HTTP                           string              `json:",omitempty"`
+	TLSSkipVerify                  bool                `json:",omitempty"`
+	Header                         map[string][]string `json:",omitempty"`
+	Method                         string              `json:",omitempty"`
+	TCP                            string              `json:",omitempty"`
+	Interval                       time.Duration       `json:",omitempty"`
+	Timeout                        time.Duration       `json:",omitempty"`
+	DeregisterCriticalServiceAfter time.Duration       `json:",omitempty"`
+}
+
+func (d *HealthCheckDefinition) MarshalJSON() ([]byte, error) {
+	type Alias HealthCheckDefinition
+	exported := &struct {
+		Interval                       string `json:",omitempty"`
+		Timeout                        string `json:",omitempty"`
+		DeregisterCriticalServiceAfter string `json:",omitempty"`
+		*Alias
+	}{
+		Interval:                       d.Interval.String(),
+		Timeout:                        d.Timeout.String(),
+		DeregisterCriticalServiceAfter: d.DeregisterCriticalServiceAfter.String(),
+		Alias:                          (*Alias)(d),
+	}
+	if d.Interval == 0 {
+		exported.Interval = ""
+	}
+	if d.Timeout == 0 {
+		exported.Timeout = ""
+	}
+	if d.DeregisterCriticalServiceAfter == 0 {
+		exported.DeregisterCriticalServiceAfter = ""
+	}
+
+	return json.Marshal(exported)
+}
+
+func (d *HealthCheckDefinition) UnmarshalJSON(data []byte) error {
+	type Alias HealthCheckDefinition
+	aux := &struct {
+		Interval                       string
+		Timeout                        string
+		DeregisterCriticalServiceAfter string
+		*Alias
+	}{
+		Alias: (*Alias)(d),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	var err error
+	if aux.Interval != "" {
+		if d.Interval, err = time.ParseDuration(aux.Interval); err != nil {
+			return err
+		}
+	}
+	if aux.Timeout != "" {
+		if d.Timeout, err = time.ParseDuration(aux.Timeout); err != nil {
+			return err
+		}
+	}
+	if aux.DeregisterCriticalServiceAfter != "" {
+		if d.DeregisterCriticalServiceAfter, err = time.ParseDuration(aux.DeregisterCriticalServiceAfter); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // IsSame checks if one HealthCheck is the same as another, without looking
@@ -911,7 +1033,8 @@ func (c *HealthCheck) IsSame(other *HealthCheck) bool {
 		c.Output != other.Output ||
 		c.ServiceID != other.ServiceID ||
 		c.ServiceName != other.ServiceName ||
-		!reflect.DeepEqual(c.ServiceTags, other.ServiceTags) {
+		!reflect.DeepEqual(c.ServiceTags, other.ServiceTags) ||
+		!reflect.DeepEqual(c.Definition, other.Definition) {
 		return false
 	}
 
@@ -1036,6 +1159,150 @@ type IndexedCheckServiceNodes struct {
 type IndexedNodeDump struct {
 	Dump NodeDump
 	QueryMeta
+}
+
+// IndexedConfigEntries has its own encoding logic which differs from
+// ConfigEntryRequest as it has to send a slice of ConfigEntry.
+type IndexedConfigEntries struct {
+	Kind    string
+	Entries []ConfigEntry
+	QueryMeta
+}
+
+func (c *IndexedConfigEntries) MarshalBinary() (data []byte, err error) {
+	// bs will grow if needed but allocate enough to avoid reallocation in common
+	// case.
+	bs := make([]byte, 128)
+	enc := codec.NewEncoderBytes(&bs, msgpackHandle)
+
+	// Encode length.
+	err = enc.Encode(len(c.Entries))
+	if err != nil {
+		return nil, err
+	}
+
+	// Encode kind.
+	err = enc.Encode(c.Kind)
+	if err != nil {
+		return nil, err
+	}
+
+	// Then actual value using alias trick to avoid infinite recursion
+	type Alias IndexedConfigEntries
+	err = enc.Encode(struct {
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return bs, nil
+}
+
+func (c *IndexedConfigEntries) UnmarshalBinary(data []byte) error {
+	// First decode the number of entries.
+	var numEntries int
+	dec := codec.NewDecoderBytes(data, msgpackHandle)
+	if err := dec.Decode(&numEntries); err != nil {
+		return err
+	}
+
+	// Next decode the kind.
+	var kind string
+	if err := dec.Decode(&kind); err != nil {
+		return err
+	}
+
+	// Then decode the slice of ConfigEntries
+	c.Entries = make([]ConfigEntry, numEntries)
+	for i := 0; i < numEntries; i++ {
+		entry, err := MakeConfigEntry(kind, "")
+		if err != nil {
+			return err
+		}
+		c.Entries[i] = entry
+	}
+
+	// Alias juggling to prevent infinite recursive calls back to this decode
+	// method.
+	type Alias IndexedConfigEntries
+	as := struct {
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+	if err := dec.Decode(&as); err != nil {
+		return err
+	}
+	return nil
+}
+
+type IndexedGenericConfigEntries struct {
+	Entries []ConfigEntry
+	QueryMeta
+}
+
+func (c *IndexedGenericConfigEntries) MarshalBinary() (data []byte, err error) {
+	// bs will grow if needed but allocate enough to avoid reallocation in common
+	// case.
+	bs := make([]byte, 128)
+	enc := codec.NewEncoderBytes(&bs, msgpackHandle)
+
+	if err := enc.Encode(len(c.Entries)); err != nil {
+		return nil, err
+	}
+
+	for _, entry := range c.Entries {
+		if err := enc.Encode(entry.GetKind()); err != nil {
+			return nil, err
+		}
+		if err := enc.Encode(entry); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := enc.Encode(c.QueryMeta); err != nil {
+		return nil, err
+	}
+
+	return bs, nil
+}
+
+func (c *IndexedGenericConfigEntries) UnmarshalBinary(data []byte) error {
+	// First decode the number of entries.
+	var numEntries int
+	dec := codec.NewDecoderBytes(data, msgpackHandle)
+	if err := dec.Decode(&numEntries); err != nil {
+		return err
+	}
+
+	// Then decode the slice of ConfigEntries
+	c.Entries = make([]ConfigEntry, numEntries)
+	for i := 0; i < numEntries; i++ {
+		var kind string
+		if err := dec.Decode(&kind); err != nil {
+			return err
+		}
+
+		entry, err := MakeConfigEntry(kind, "")
+		if err != nil {
+			return err
+		}
+
+		if err := dec.Decode(entry); err != nil {
+			return err
+		}
+
+		c.Entries[i] = entry
+	}
+
+	if err := dec.Decode(&c.QueryMeta); err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 // DirEntry is used to represent a directory entry. This is

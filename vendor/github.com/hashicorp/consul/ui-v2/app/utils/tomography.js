@@ -1,3 +1,6 @@
+// TODO: Istanbul is ignored for the moment as it's not mine,
+// once I come here properly and 100% follow unignore
+/* istanbul ignore file */
 export default function(distance) {
   return function(name, coordinates) {
     var min = 999999999;
@@ -41,7 +44,6 @@ export default function(distance) {
     }
     return {
       distances: distances,
-      n: distances.length,
       min: parseInt(min * 100) / 100,
       median: parseInt(median * 100) / 100,
       max: parseInt(max * 100) / 100,

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net"
 	"reflect"
@@ -30,13 +29,6 @@ type RuntimeConfig struct {
 	// non-user configurable values
 	AEInterval time.Duration
 
-	// ACLDisabledTTL is used by clients to determine how long they will
-	// wait to check again with the servers if they discover ACLs are not
-	// enabled. (not user configurable)
-	//
-	// hcl: acl_disabled_ttl = "duration"
-	ACLDisabledTTL time.Duration
-
 	CheckDeregisterIntervalMin time.Duration
 	CheckReapInterval          time.Duration
 	SegmentLimit               int
@@ -56,18 +48,30 @@ type RuntimeConfig struct {
 	ConsulRaftLeaderLeaseTimeout     time.Duration
 	ConsulServerHealthInterval       time.Duration
 
+	// ACLDisabledTTL is used by agents to determine how long they will
+	// wait to check again with the servers if they discover ACLs are not
+	// enabled. (not user configurable)
+	//
+	// hcl: acl.disabled_ttl = "duration"
+	ACLDisabledTTL time.Duration
+
+	// ACLsEnabled is used to determine whether ACLs should be enabled
+	//
+	// hcl: acl.enabled = boolean
+	ACLsEnabled bool
+
 	// ACLAgentMasterToken is a special token that has full read and write
 	// privileges for this agent, and can be used to call agent endpoints
 	// when no servers are available.
 	//
-	// hcl: acl_agent_master_token = string
+	// hcl: acl.tokens.agent_master = string
 	ACLAgentMasterToken string
 
 	// ACLAgentToken is the default token used to make requests for the agent
 	// itself, such as for registering itself with the catalog. If not
 	// configured, the 'acl_token' will be used.
 	//
-	// hcl: acl_agent_token = string
+	// hcl: acl.tokens.agent = string
 	ACLAgentToken string
 
 	// ACLDatacenter is the central datacenter that holds authoritative
@@ -82,7 +86,7 @@ type RuntimeConfig struct {
 	// ACLs are used to black-list, or "deny" which means ACLs are
 	// white-lists.
 	//
-	// hcl: acl_default_policy = ("allow"|"deny")
+	// hcl: acl.default_policy = ("allow"|"deny")
 	ACLDefaultPolicy string
 
 	// ACLDownPolicy is used to control the ACL interaction when we cannot
@@ -94,12 +98,13 @@ type RuntimeConfig struct {
 	//                    ACL's to be used to service requests. This
 	//                    is the default. If the ACL is not in the cache,
 	//                    this acts like deny.
-	//   * async-cache - Same behaviour as extend-cache, but perform ACL
+	//   * async-cache - Same behavior as extend-cache, but perform ACL
 	//                   Lookups asynchronously when cache TTL is expired.
 	//
-	// hcl: acl_down_policy = ("allow"|"deny"|"extend-cache"|"async-cache")
+	// hcl: acl.down_policy = ("allow"|"deny"|"extend-cache"|"async-cache")
 	ACLDownPolicy string
 
+	// DEPRECATED (ACL-Legacy-Compat)
 	// ACLEnforceVersion8 is used to gate a set of ACL policy features that
 	// are opt-in prior to Consul 0.8 and opt-out in Consul 0.8 and later.
 	//
@@ -112,35 +117,59 @@ type RuntimeConfig struct {
 	// See https://www.consul.io/docs/guides/acl.html#list-policy-for-keys for
 	// more details.
 	//
-	// hcl: acl_enable_key_list_policy = (true|false)
+	// hcl: acl.enable_key_list_policy = (true|false)
 	ACLEnableKeyListPolicy bool
 
 	// ACLMasterToken is used to bootstrap the ACL system. It should be specified
 	// on the servers in the ACLDatacenter. When the leader comes online, it ensures
 	// that the Master token is available. This provides the initial token.
 	//
-	// hcl: acl_master_token = string
+	// hcl: acl.tokens.master = string
 	ACLMasterToken string
 
-	// ACLReplicationToken is used to fetch ACLs from the ACLDatacenter in
-	// order to replicate them locally. Setting this to a non-empty value
-	// also enables replication. Replication is only available in datacenters
-	// other than the ACLDatacenter.
+	// ACLReplicationToken is used to replicate data locally from the
+	// PrimaryDatacenter. Replication is only available on servers in
+	// datacenters other than the PrimaryDatacenter
 	//
-	// hcl: acl_replication_token = string
+	// DEPRECATED (ACL-Legacy-Compat): Setting this to a non-empty value
+	// also enables legacy ACL replication if ACLs are enabled and in legacy mode.
+	//
+	// hcl: acl.tokens.replication = string
 	ACLReplicationToken string
 
-	// ACLTTL is used to control the time-to-live of cached ACLs . This has
+	// ACLtokenReplication is used to indicate that both tokens and policies
+	// should be replicated instead of just policies
+	//
+	// hcl: acl.token_replication = boolean
+	ACLTokenReplication bool
+
+	// ACLTokenTTL is used to control the time-to-live of cached ACL tokens. This has
 	// a major impact on performance. By default, it is set to 30 seconds.
 	//
-	// hcl: acl_ttl = "duration"
-	ACLTTL time.Duration
+	// hcl: acl.policy_ttl = "duration"
+	ACLTokenTTL time.Duration
+
+	// ACLPolicyTTL is used to control the time-to-live of cached ACL policies. This has
+	// a major impact on performance. By default, it is set to 30 seconds.
+	//
+	// hcl: acl.token_ttl = "duration"
+	ACLPolicyTTL time.Duration
+
+	// ACLRoleTTL is used to control the time-to-live of cached ACL roles. This has
+	// a major impact on performance. By default, it is set to 30 seconds.
+	//
+	// hcl: acl.role_ttl = "duration"
+	ACLRoleTTL time.Duration
 
 	// ACLToken is the default token used to make requests if a per-request
 	// token is not provided. If not configured the 'anonymous' token is used.
 	//
-	// hcl: acl_token = string
+	// hcl: acl.tokens.default = string
 	ACLToken string
+
+	// ACLEnableTokenPersistence determines whether or not tokens set via the agent HTTP API
+	// should be persisted to disk and reloaded when an agent restarts.
+	ACLEnableTokenPersistence bool
 
 	// AutopilotCleanupDeadServers enables the automatic cleanup of dead servers when new ones
 	// are added to the peer list. Defaults to true.
@@ -296,11 +325,29 @@ type RuntimeConfig struct {
 	// flag: -recursor string [-recursor string]
 	DNSRecursors []string
 
+	// DNSUseCache wether or not to use cache for dns queries
+	//
+	// hcl: dns_config { use_cache = (true|false) }
+	DNSUseCache bool
+
+	// DNSUseCache wether or not to use cache for dns queries
+	//
+	// hcl: dns_config { cache_max_age = "duration" }
+	DNSCacheMaxAge time.Duration
+
 	// HTTPBlockEndpoints is a list of endpoint prefixes to block in the
 	// HTTP API. Any requests to these will get a 403 response.
 	//
 	// hcl: http_config { block_endpoints = []string }
 	HTTPBlockEndpoints []string
+
+	// AllowWriteHTTPFrom restricts the agent write endpoints to the given
+	// networks. Any request to a protected endpoint that is not mactched
+	// by one of these networks will get a 403 response.
+	// An empty slice means no restriction.
+	//
+	// hcl: http_config { allow_write_http_from = []string }
+	AllowWriteHTTPFrom []*net.IPNet
 
 	// HTTPResponseHeaders are used to add HTTP header response fields to the HTTP API responses.
 	//
@@ -320,7 +367,7 @@ type RuntimeConfig struct {
 	// flag: -datacenter string
 	Datacenter string
 
-	// Defines the maximum stale value for discovery path. Defauls to "0s".
+	// Defines the maximum stale value for discovery path. Defaults to "0s".
 	// Discovery paths are /v1/heath/ paths
 	//
 	// If not set to 0, it will try to perform stale read and perform only a
@@ -455,6 +502,10 @@ type RuntimeConfig struct {
 	// flag: -client string
 	ClientAddrs []*net.IPAddr
 
+	// ConfigEntryBootstrap contains a list of ConfigEntries to ensure are created
+	// If entries of the same Kind/Name exist already these will not update them.
+	ConfigEntryBootstrap []structs.ConfigEntry
+
 	// ConnectEnabled opts the agent into connect. It should be set on all clients
 	// and servers in a cluster for correct connect operation.
 	ConnectEnabled bool
@@ -510,7 +561,7 @@ type RuntimeConfig struct {
 	// ConnectCAConfig is the config to use for the CA provider.
 	ConnectCAConfig map[string]interface{}
 
-	// ConnectTestDisableManagedProxies is not exposed to public config but us
+	// ConnectTestDisableManagedProxies is not exposed to public config but is
 	// used by TestAgent to prevent self-executing the test binary in the
 	// background if a managed proxy is created for a test. The only place we
 	// actually want to test processes really being spun up and managed is in
@@ -519,6 +570,13 @@ type RuntimeConfig struct {
 	// all the agent state for them, just doesn't actually start external
 	// processes up.
 	ConnectTestDisableManagedProxies bool
+
+	// ConnectTestCALeafRootChangeSpread is used to control how long the CA leaf
+	// cache with spread CSRs over when a root change occurs. For now we don't
+	// expose this in public config intentionally but could later with a rename.
+	// We only set this from during tests to effectively make CA rotation tests
+	// deterministic again.
+	ConnectTestCALeafRootChangeSpread time.Duration
 
 	// DNSAddrs contains the list of TCP and UDP addresses the DNS server will
 	// bind to. If the DNS endpoint is disabled (ports.dns <= 0) the list is
@@ -614,21 +672,18 @@ type RuntimeConfig struct {
 	// hcl: discard_check_output = (true|false)
 	DiscardCheckOutput bool
 
-	// EnableACLReplication is used to turn on ACL replication when using
-	// /v1/agent/token/acl_replication_token to introduce the token, instead
-	// of setting acl_replication_token in the config. Setting the token via
-	// config will also set this to true for backward compatibility.
-	//
-	// hcl: enable_acl_replication = (true|false)
-	// todo(fs): rename to ACLEnableReplication
-	EnableACLReplication bool
-
 	// EnableAgentTLSForChecks is used to apply the agent's TLS settings in
 	// order to configure the HTTP client used for health checks. Enabling
 	// this allows HTTP checks to present a client certificate and verify
 	// the server using the same TLS configuration as the agent (CA, cert,
 	// and key).
 	EnableAgentTLSForChecks bool
+
+	// EnableCentralServiceConfig controls whether the agent should incorporate
+	// centralized config such as service-defaults into local service registrations.
+	//
+	// hcl: enable_central_service_config = (true|false)
+	EnableCentralServiceConfig bool
 
 	// EnableDebug is used to enable various debugging features.
 	//
@@ -818,6 +873,13 @@ type RuntimeConfig struct {
 	//
 	// hcl: pid_file = string
 	PidFile string
+
+	// PrimaryDatacenter is the central datacenter that holds authoritative
+	// ACL records, replicates intentions and holds the root CA for Connect.
+	// This must be the same for the entire cluster. Off by default.
+	//
+	// hcl: primary_datacenter = string
+	PrimaryDatacenter string
 
 	// RPCAdvertiseAddr is the TCP address Consul advertises for its RPC endpoint.
 	// By default this is the bind address on the default RPC Server port. If the
@@ -1396,25 +1458,6 @@ type RuntimeConfig struct {
 	Watches []map[string]interface{}
 }
 
-// IncomingHTTPSConfig returns the TLS configuration for HTTPS
-// connections to consul.
-func (c *RuntimeConfig) IncomingHTTPSConfig() (*tls.Config, error) {
-	tc := &tlsutil.Config{
-		VerifyIncoming:           c.VerifyIncoming || c.VerifyIncomingHTTPS,
-		VerifyOutgoing:           c.VerifyOutgoing,
-		CAFile:                   c.CAFile,
-		CAPath:                   c.CAPath,
-		CertFile:                 c.CertFile,
-		KeyFile:                  c.KeyFile,
-		NodeName:                 c.NodeName,
-		ServerName:               c.ServerName,
-		TLSMinVersion:            c.TLSMinVersion,
-		CipherSuites:             c.TLSCipherSuites,
-		PreferServerCipherSuites: c.TLSPreferServerCipherSuites,
-	}
-	return tc.IncomingTLSConfig()
-}
-
 func (c *RuntimeConfig) apiAddresses(maxPerType int) (unixAddrs, httpAddrs, httpsAddrs []string) {
 	if len(c.HTTPSAddrs) > 0 {
 		for i, addr := range c.HTTPSAddrs {
@@ -1551,6 +1594,27 @@ func (c *RuntimeConfig) APIConfig(includeClientCerts bool) (*api.Config, error) 
 // time.Duration values are formatted to improve readability.
 func (c *RuntimeConfig) Sanitized() map[string]interface{} {
 	return sanitize("rt", reflect.ValueOf(c)).Interface().(map[string]interface{})
+}
+
+func (c *RuntimeConfig) ToTLSUtilConfig() tlsutil.Config {
+	return tlsutil.Config{
+		VerifyIncoming:           c.VerifyIncoming,
+		VerifyIncomingRPC:        c.VerifyIncomingRPC,
+		VerifyIncomingHTTPS:      c.VerifyIncomingHTTPS,
+		VerifyOutgoing:           c.VerifyOutgoing,
+		VerifyServerHostname:     c.VerifyServerHostname,
+		CAFile:                   c.CAFile,
+		CAPath:                   c.CAPath,
+		CertFile:                 c.CertFile,
+		KeyFile:                  c.KeyFile,
+		NodeName:                 c.NodeName,
+		Domain:                   c.DNSDomain,
+		ServerName:               c.ServerName,
+		TLSMinVersion:            c.TLSMinVersion,
+		CipherSuites:             c.TLSCipherSuites,
+		PreferServerCipherSuites: c.TLSPreferServerCipherSuites,
+		EnableAgentTLSForChecks:  c.EnableAgentTLSForChecks,
+	}
 }
 
 // isSecret determines whether a field name represents a field which

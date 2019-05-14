@@ -6,7 +6,7 @@ import { get } from '@ember/object';
 import WithIntentionActions from 'consul-ui/mixins/intention/with-actions';
 
 export default Route.extend(WithIntentionActions, {
-  repo: service('intentions'),
+  repo: service('repository/intention'),
   queryParams: {
     s: {
       as: 'filter',
@@ -19,7 +19,6 @@ export default Route.extend(WithIntentionActions, {
     });
   },
   setupController: function(controller, model) {
-    this._super(...arguments);
     controller.setProperties(model);
   },
 });

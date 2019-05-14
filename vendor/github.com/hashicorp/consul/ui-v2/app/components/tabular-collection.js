@@ -1,12 +1,12 @@
-import Component from 'ember-collection/components/ember-collection';
+import CollectionComponent from 'ember-collection/components/ember-collection';
 import needsRevalidate from 'ember-collection/utils/needs-revalidate';
 import identity from 'ember-collection/utils/identity';
 import Grid from 'ember-collection/layouts/grid';
-import SlotsMixin from 'ember-block-slots';
+import SlotsMixin from 'block-slots';
 import WithResizing from 'consul-ui/mixins/with-resizing';
 import style from 'ember-computed-style';
-import qsaFactory from 'consul-ui/utils/qsa-factory';
 
+import { inject as service } from '@ember/service';
 import { computed, get, set } from '@ember/object';
 /**
  * Heavily extended `ember-collection` component
@@ -20,8 +20,6 @@ import { computed, get, set } from '@ember/object';
  * in the future
  */
 
-// ember doesn't like you using `$` hence `$$`
-const $$ = qsaFactory();
 // need to copy Cell in wholesale as there is no way to import it
 // there is no change made to `Cell` here, its only here as its
 // private in `ember-collection`
@@ -53,26 +51,6 @@ class ZIndexedGrid extends Grid {
     return style;
   }
 }
-// basic DOM closest utility to cope with no support
-// TODO: instead of degrading gracefully
-// add a while polyfill for closest
-const closest = function(sel, el) {
-  try {
-    return el.closest(sel);
-  } catch (e) {
-    return;
-  }
-};
-const sibling = function(el, name) {
-  let sibling = el;
-  while ((sibling = sibling.nextSibling)) {
-    if (sibling.nodeType === 1) {
-      if (sibling.nodeName.toLowerCase() === name) {
-        return sibling;
-      }
-    }
-  }
-};
 /**
  * The tabular-collection can contain 'actions' the UI for which
  * uses dropdown 'action groups', so a group of different actions.
@@ -101,13 +79,17 @@ const change = function(e) {
       // 'actions_close' would mean that all menus have been closed
       // therefore we don't need to calculate
       if (e.currentTarget.getAttribute('id') !== 'actions_close') {
-        const $tr = closest('tr', e.currentTarget);
-        const $group = sibling(e.currentTarget, 'ul');
-        const $footer = [...$$('footer[role="contentinfo"]')][0];
+        const dom = get(this, 'dom');
+
+        const $tr = dom.closest('tr', e.currentTarget);
+        const $group = dom.sibling(e.currentTarget, 'ul');
         const groupRect = $group.getBoundingClientRect();
-        const footerRect = $footer.getBoundingClientRect();
         const groupBottom = groupRect.top + $group.clientHeight;
+
+        const $footer = dom.element('footer[role="contentinfo"]');
+        const footerRect = $footer.getBoundingClientRect();
         const footerTop = footerRect.top;
+
         if (groupBottom > footerTop) {
           $group.classList.add('above');
         } else {
@@ -129,43 +111,58 @@ const change = function(e) {
     }
   }
 };
-export default Component.extend(SlotsMixin, WithResizing, {
+export default CollectionComponent.extend(SlotsMixin, WithResizing, {
   tagName: 'table',
+  classNames: ['dom-recycling'],
+  classNameBindings: ['hasActions'],
   attributeBindings: ['style'],
   width: 1150,
-  height: 500,
+  rowHeight: 50,
+  maxHeight: 500,
   style: style('getStyle'),
   checked: null,
+  hasCaption: false,
+  dom: service('dom'),
   init: function() {
     this._super(...arguments);
     this.change = change.bind(this);
     this.confirming = [];
     // TODO: The row height should auto calculate properly from the CSS
-    this['cell-layout'] = new ZIndexedGrid(get(this, 'width'), 50);
+    this['cell-layout'] = new ZIndexedGrid(get(this, 'width'), get(this, 'rowHeight'));
   },
-  getStyle: computed('height', function() {
+  getStyle: computed('rowHeight', '_items', 'maxRows', 'maxHeight', function() {
+    const maxRows = get(this, 'rows');
+    let height = get(this, 'maxHeight');
+    if (maxRows) {
+      let rows = Math.max(3, get(this._items || [], 'length'));
+      rows = Math.min(maxRows, rows);
+      height = get(this, 'rowHeight') * rows + 29;
+    }
     return {
-      height: get(this, 'height'),
+      height: height,
     };
   }),
   resize: function(e) {
-    const $tbody = [...$$('tbody', this.element)][0];
-    const $appContent = [...$$('main > div')][0];
+    const $tbody = this.element;
+    const dom = get(this, 'dom');
+    const $appContent = dom.element('main > div');
     if ($appContent) {
+      const border = 1;
       const rect = $tbody.getBoundingClientRect();
-      const $footer = [...$$('footer[role="contentinfo"]')][0];
-      const space = rect.top + $footer.clientHeight;
+      const $footer = dom.element('footer[role="contentinfo"]');
+      const space = rect.top + $footer.clientHeight + border;
       const height = e.detail.height - space;
-      this.set('height', Math.max(0, height));
+      this.set('maxHeight', Math.max(0, height));
       // TODO: The row height should auto calculate properly from the CSS
-      this['cell-layout'] = new ZIndexedGrid($appContent.clientWidth, 50);
+      this['cell-layout'] = new ZIndexedGrid($appContent.clientWidth, get(this, 'rowHeight'));
       this.updateItems();
       this.updateScrollPosition();
     }
   },
   willRender: function() {
     this._super(...arguments);
-    this.set('hasActions', this._isRegistered('actions'));
+    set(this, 'hasCaption', this._isRegistered('caption'));
+    set(this, 'hasActions', this._isRegistered('actions'));
   },
   // `ember-collection` bug workaround
   // https://github.com/emberjs/ember-collection/issues/138
@@ -285,26 +282,7 @@ export default Component.extend(SlotsMixin, WithResizing, {
   },
   actions: {
     click: function(e) {
-      // click on row functionality
-      // so if you click the actual row but not a link
-      // find the first link and fire that instead
-      const name = e.target.nodeName.toLowerCase();
-      switch (name) {
-        case 'input':
-        case 'label':
-        case 'a':
-        case 'button':
-          return;
-      }
-      const $a = closest('tr', e.target).querySelector('a');
-      if ($a) {
-        const click = new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          view: window,
-        });
-        $a.dispatchEvent(click);
-      }
+      return get(this, 'dom').clickFirstAnchor(e);
     },
   },
 });

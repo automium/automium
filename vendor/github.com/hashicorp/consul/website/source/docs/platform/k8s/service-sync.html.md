@@ -67,16 +67,19 @@ sync to understand how the syncing works.
 The sync process must authenticate to both Kubernetes and Consul to read
 and write services.
 
-For Consul, the process accepts both the standard CLI flag `-token` and
-the environment variable `CONSUL_HTTP_TOKEN`. This should be set to an
-Consul [ACL token](/docs/guides/acl.html) if ACLs are enabled. This
-can also be configured using the Helm chart to read from a Kubernetes
-secret.
-
 For Kubernetes, a valid kubeconfig file must be provided with cluster
-and auth information. The sync process will look into the default locations
+and authentication information. The sync process will look into the default locations
 for both in-cluster and out-of-cluster authentication. If `kubectl` works,
 then the sync program should work.
+
+For Consul, if ACLs are configured on the cluster, a Consul
+[ACL token](https://learn.hashicorp.com/consul/advanced/day-1-operations/acl-guide)
+will need to be provided. Review the [ACL rules](/docs/agent/acl-rules.html)
+when creating this token so that it only allows the necessary privileges. The catalog
+sync process accepts this token by using the [`CONSUL_HTTP_TOKEN`](/docs/commands/index.html#consul_http_token)
+environment variable. This token should be set as a
+[Kubernetes secret](https://kubernetes.io/docs/concepts/configuration/secret/#creating-your-own-secrets)
+and referenced in the Helm chart.
 
 ## Kubernetes to Consul
 
@@ -131,11 +134,20 @@ If an external IP list is present, a service instance in Consul will be created
 for each external IP. It is assumed that if an external IP is present that it
 is routable and configured by some other system.
 
+#### ClusterIP
+
+ClusterIP services are synced by default as of `consul-k8s` version 0.3.0. In 
+many Kubernetes clusters, ClusterIPs may not be accessible outside of the cluster,
+so you may end up with services registered in Consul that are not routeable. To
+skip syncing ClusterIP services, set [`syncClusterIPServices`](/docs/platform/k8s/helm.html#v-synccatalog-clusterip-sync)
+to `false` in the Helm chart values file.
+
 ### Sync Enable/Disable
 
-By default, all valid services (as explained above) are synced. This default
-can be changed as configuration to the sync process. Syncing can also be
-explicitly enabled or disabled using an annotation:
+By default, all valid services (as explained above) are synced. This default can
+be changed using the [configuration](/docs/platform/k8s/helm.html#v-synccatalog-default).
+Syncing can also be explicitly enabled or disabled using an
+annotation:
 
 ```yaml
 kind: Service
@@ -143,7 +155,7 @@ apiVersion: v1
 metadata:
   name: my-service
   annotations:
-    "consul.hashicorp.com/service-sync": false
+    "consul.hashicorp.com/service-sync": "false"
 ```
 
 ### Service Name

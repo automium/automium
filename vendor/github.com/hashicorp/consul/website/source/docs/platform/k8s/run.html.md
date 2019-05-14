@@ -27,13 +27,21 @@ chart, you can have a full Consul deployment up and running in seconds.
 
 While the Helm chart exposes dozens of useful configurations and automatically
 sets up complex resources, it **does not automatically operate Consul.**
-You are still reponsible for learning how to monitor, backup,
+You are still responsible for learning how to monitor, backup,
 upgrade, etc. the Consul cluster.
 
 The Helm chart has no required configuration and will install a Consul
 cluster with sane defaults out of the box. Prior to going to production,
 it is highly recommended that you
 [learn about the configuration options](/docs/platform/k8s/helm.html#configuration-values-).
+
+~> **Security Warning:** By default, the chart will install an insecure configuration
+of Consul. This provides a less complicated out-of-box experience for new users,
+but is not appropriate for a production setup. It is highly recommended to use
+a properly secured Kubernetes cluster or make sure that you understand and enable
+the [recommended security features](/docs/internals/security.html). Currently,
+some of these features are not supported in the Helm chart and require additional
+manual configuration.
 
 ## How-To
 
@@ -282,6 +290,11 @@ Additionally, a **PodDisruptionBudget** is configured so the Consul server
 cluster maintains quorum during voluntary operational events. The maximum
 unavailable is `(n/2)-1` where `n` is the number of server agents.
 
+-> **Note:** Kubernetes and Helm do not delete Persistent Volumes or Persistent
+Volume Claims when a
+[StatefulSet is deleted](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#stable-storage),
+so this must done manually when removing servers.
+
 ### Client Agents
 
 The client agents are run as a **DaemonSet**. This places one agent
@@ -299,7 +312,7 @@ considered for security. For a properly production-secured agent with TLS
 and ACLs, this is safe.
 
 Some people prefer to run **Consul agent per pod** architectures, since this
-makes it easy to register the pod as a service easily. However, this turns
+makes it easy to register the pod as a service. However, this turns
 a pod into a "node" in Consul and also causes an explosion of resource usage
 since every pod needs a Consul agent. We recommend instead running an
 agent (in a dedicated pod) per node, via the DaemonSet. This maintains the
@@ -307,5 +320,5 @@ node equivalence in Consul. Service registration should be handled via the
 catalog syncing feature with Services rather than pods.
 
 -> **Note:** Due to a limitation of anti-affinity rules with DaemonSets,
-a client-mode agent runs alongide server-mode agents in Kubernetes. This
+a client-mode agent runs alongside server-mode agents in Kubernetes. This
 duplication wastes some resources, but otherwise functions perfectly fine.

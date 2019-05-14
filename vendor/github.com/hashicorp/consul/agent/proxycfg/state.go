@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	coalesceTimeout       = 200 * time.Millisecond
-	rootsWatchID          = "roots"
-	leafWatchID           = "leaf"
-	intentionsWatchID     = "intentions"
-	serviceIDPrefix       = string(structs.UpstreamDestTypeService) + ":"
-	preparedQueryIDPrefix = string(structs.UpstreamDestTypePreparedQuery) + ":"
+	coalesceTimeout                  = 200 * time.Millisecond
+	rootsWatchID                     = "roots"
+	leafWatchID                      = "leaf"
+	intentionsWatchID                = "intentions"
+	serviceIDPrefix                  = string(structs.UpstreamDestTypeService) + ":"
+	preparedQueryIDPrefix            = string(structs.UpstreamDestTypePreparedQuery) + ":"
+	defaultPreparedQueryPollInterval = 30 * time.Second
 )
 
 // state holds all the state needed to maintain the config for a registered
@@ -89,7 +90,7 @@ func newState(ns *structs.NodeService, token string) (*state, error) {
 	}, nil
 }
 
-// Watch initialised watches on all necessary cache data for the current proxy
+// Watch initialized watches on all necessary cache data for the current proxy
 // registration state and returns a chan to observe updates to the
 // ConfigSnapshot that contains all necessary config state. The chan is closed
 // when the state is Closed.
@@ -164,15 +165,12 @@ func (s *state) initWatches() error {
 
 		switch u.DestinationType {
 		case structs.UpstreamDestTypePreparedQuery:
-			// TODO(banks): prepared queries don't support blocking. We need to come
-			// up with an alternative to Notify that will poll at a sensible rate.
-
-			// err = c.Notify(ctx, cachetype.PreparedQueryName, &structs.PreparedQueryExecuteRequest{
-			//  Datacenter:    dc,
-			//  QueryOptions:  structs.QueryOptions{Token: token},
-			//  QueryIDOrName: u.DestinationName,
-			//  Connect: true,
-			// }, u.Identifier(), ch)
+			err = s.cache.Notify(s.ctx, cachetype.PreparedQueryName, &structs.PreparedQueryExecuteRequest{
+				Datacenter:    dc,
+				QueryOptions:  structs.QueryOptions{Token: s.token, MaxAge: defaultPreparedQueryPollInterval},
+				QueryIDOrName: u.DestinationName,
+				Connect:       true,
+			}, "upstream:"+u.Identifier(), s.ch)
 		case structs.UpstreamDestTypeService:
 			fallthrough
 		case "": // Treat unset as the default Service type
@@ -181,7 +179,10 @@ func (s *state) initWatches() error {
 				QueryOptions: structs.QueryOptions{Token: s.token},
 				ServiceName:  u.DestinationName,
 				Connect:      true,
-			}, u.Identifier(), s.ch)
+				// Note that Identifier doesn't type-prefix for service any more as it's
+				// the default and makes metrics and other things much cleaner. It's
+				// simpler for us if we have the type to make things unambiguous.
+			}, "upstream:"+serviceIDPrefix+u.Identifier(), s.ch)
 
 			if err != nil {
 				return err
@@ -299,19 +300,21 @@ func (s *state) handleUpdate(u cache.UpdateEvent, snap *ConfigSnapshot) error {
 	default:
 		// Service discovery result, figure out which type
 		switch {
-		case strings.HasPrefix(u.CorrelationID, serviceIDPrefix):
+		case strings.HasPrefix(u.CorrelationID, "upstream:"+serviceIDPrefix):
 			resp, ok := u.Result.(*structs.IndexedCheckServiceNodes)
 			if !ok {
 				return fmt.Errorf("invalid type for service response: %T", u.Result)
 			}
-			snap.UpstreamEndpoints[u.CorrelationID] = resp.Nodes
+			svc := strings.TrimPrefix(u.CorrelationID, "upstream:"+serviceIDPrefix)
+			snap.UpstreamEndpoints[svc] = resp.Nodes
 
-		case strings.HasPrefix(u.CorrelationID, preparedQueryIDPrefix):
+		case strings.HasPrefix(u.CorrelationID, "upstream:"+preparedQueryIDPrefix):
 			resp, ok := u.Result.(*structs.PreparedQueryExecuteResponse)
 			if !ok {
 				return fmt.Errorf("invalid type for prepared query response: %T", u.Result)
 			}
-			snap.UpstreamEndpoints[u.CorrelationID] = resp.Nodes
+			pq := strings.TrimPrefix(u.CorrelationID, "upstream:")
+			snap.UpstreamEndpoints[pq] = resp.Nodes
 
 		default:
 			return errors.New("unknown correlation ID")

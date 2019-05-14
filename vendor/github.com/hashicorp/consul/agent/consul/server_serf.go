@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/agent/metadata"
+	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/lib"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
@@ -69,6 +70,13 @@ func (s *Server) setupSerf(conf *serf.Config, ch chan serf.Event, path string, w
 	if s.config.UseTLS {
 		conf.Tags["use_tls"] = "1"
 	}
+
+	if s.acls.ACLsEnabled() {
+		// we start in legacy mode and allow upgrading later
+		conf.Tags["acls"] = string(structs.ACLModeLegacy)
+	} else {
+		conf.Tags["acls"] = string(structs.ACLModeDisabled)
+	}
 	if s.logger == nil {
 		conf.MemberlistConfig.LogOutput = s.config.LogOutput
 		conf.LogOutput = s.config.LogOutput
@@ -129,12 +137,10 @@ func (s *Server) lanEventHandler() {
 				s.lanNodeJoin(e.(serf.MemberEvent))
 				s.localMemberEvent(e.(serf.MemberEvent))
 
-			case serf.EventMemberLeave, serf.EventMemberFailed:
+			case serf.EventMemberLeave, serf.EventMemberFailed, serf.EventMemberReap:
 				s.lanNodeFailed(e.(serf.MemberEvent))
 				s.localMemberEvent(e.(serf.MemberEvent))
 
-			case serf.EventMemberReap:
-				s.localMemberEvent(e.(serf.MemberEvent))
 			case serf.EventUser:
 				s.localEvent(e.(serf.UserEvent))
 			case serf.EventMemberUpdate:

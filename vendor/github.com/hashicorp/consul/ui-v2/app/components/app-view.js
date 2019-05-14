@@ -1,22 +1,33 @@
 import Component from '@ember/component';
-import SlotsMixin from 'ember-block-slots';
+import SlotsMixin from 'block-slots';
 import { get } from '@ember/object';
-const $html = document.documentElement;
-const templatize = function(arr = []) {
-  return arr.map(item => `template-${item}`);
-};
+import { inject as service } from '@ember/service';
+import templatize from 'consul-ui/utils/templatize';
 export default Component.extend(SlotsMixin, {
   loading: false,
+  authorized: true,
+  enabled: true,
   classNames: ['app-view'],
+  classNameBindings: ['enabled::disabled', 'authorized::unauthorized'],
+  dom: service('dom'),
   didReceiveAttrs: function() {
+    // right now only manually added classes are hoisted to <html>
+    const $root = get(this, 'dom').root();
     let cls = get(this, 'class') || '';
     if (get(this, 'loading')) {
       cls += ' loading';
     } else {
-      $html.classList.remove(...templatize(['loading']));
+      $root.classList.remove(...templatize(['loading']));
     }
     if (cls) {
-      $html.classList.add(...templatize(cls.split(' ')));
+      // its possible for 'layout' templates to change after insert
+      // check for these specific layouts and clear them out
+      [...$root.classList].forEach(function(item, i) {
+        if (templatize(['edit', 'show', 'list']).indexOf(item) !== -1) {
+          $root.classList.remove(item);
+        }
+      });
+      $root.classList.add(...templatize(cls.split(' ')));
     }
   },
   didInsertElement: function() {
@@ -25,7 +36,8 @@ export default Component.extend(SlotsMixin, {
   didDestroyElement: function() {
     const cls = get(this, 'class') + ' loading';
     if (cls) {
-      $html.classList.remove(...templatize(cls.split(' ')));
+      const $root = get(this, 'dom').root();
+      $root.classList.remove(...templatize(cls.split(' ')));
     }
   },
 });

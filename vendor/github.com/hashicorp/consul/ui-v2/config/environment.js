@@ -27,7 +27,9 @@ module.exports = function(environment) {
       injectionFactories: ['view', 'controller', 'component'],
     },
   };
+  // TODO: These should probably go onto APP
   ENV = Object.assign({}, ENV, {
+    CONSUL_UI_DISABLE_REALTIME: false,
     CONSUL_GIT_SHA: (function() {
       if (process.env.CONSUL_GIT_SHA) {
         return process.env.CONSUL_GIT_SHA;
@@ -61,7 +63,7 @@ module.exports = function(environment) {
     })(),
     CONSUL_DOCUMENTATION_URL: 'https://www.consul.io/docs',
     CONSUL_COPYRIGHT_URL: 'https://www.hashicorp.com',
-    CONSUL_COPYRIGHT_YEAR: '2018',
+    CONSUL_COPYRIGHT_YEAR: '2019',
   });
 
   if (environment === 'development') {

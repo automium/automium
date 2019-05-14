@@ -7,8 +7,8 @@ import WithKvActions from 'consul-ui/mixins/kv/with-actions';
 import ascend from 'consul-ui/utils/ascend';
 
 export default Route.extend(WithKvActions, {
-  repo: service('kv'),
-  sessionRepo: service('session'),
+  repo: service('repository/kv'),
+  sessionRepo: service('repository/session'),
   model: function(params) {
     const key = params.key;
     const dc = this.modelFor('dc').dc.Name;
@@ -32,7 +32,6 @@ export default Route.extend(WithKvActions, {
     });
   },
   setupController: function(controller, model) {
-    this._super(...arguments);
     controller.setProperties(model);
   },
 });

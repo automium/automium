@@ -2,10 +2,12 @@ package consul
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/armon/go-metrics"
 	"github.com/hashicorp/consul/agent/consul/state"
 	"github.com/hashicorp/consul/agent/structs"
+	bexpr "github.com/hashicorp/go-bexpr"
 	"github.com/hashicorp/go-memdb"
 )
 
@@ -18,6 +20,11 @@ type Health struct {
 func (h *Health) ChecksInState(args *structs.ChecksInStateRequest,
 	reply *structs.IndexedHealthChecks) error {
 	if done, err := h.srv.forward("Health.ChecksInState", args, args, reply); done {
+		return err
+	}
+
+	filter, err := bexpr.CreateFilter(args.Filter, nil, reply.HealthChecks)
+	if err != nil {
 		return err
 	}
 
@@ -40,6 +47,13 @@ func (h *Health) ChecksInState(args *structs.ChecksInStateRequest,
 			if err := h.srv.filterACL(args.Token, reply); err != nil {
 				return err
 			}
+
+			raw, err := filter.Execute(reply.HealthChecks)
+			if err != nil {
+				return err
+			}
+			reply.HealthChecks = raw.(structs.HealthChecks)
+
 			return h.srv.sortNodesByDistanceFrom(args.Source, reply.HealthChecks)
 		})
 }
@@ -48,6 +62,11 @@ func (h *Health) ChecksInState(args *structs.ChecksInStateRequest,
 func (h *Health) NodeChecks(args *structs.NodeSpecificRequest,
 	reply *structs.IndexedHealthChecks) error {
 	if done, err := h.srv.forward("Health.NodeChecks", args, args, reply); done {
+		return err
+	}
+
+	filter, err := bexpr.CreateFilter(args.Filter, nil, reply.HealthChecks)
+	if err != nil {
 		return err
 	}
 
@@ -60,7 +79,16 @@ func (h *Health) NodeChecks(args *structs.NodeSpecificRequest,
 				return err
 			}
 			reply.Index, reply.HealthChecks = index, checks
-			return h.srv.filterACL(args.Token, reply)
+			if err := h.srv.filterACL(args.Token, reply); err != nil {
+				return err
+			}
+
+			raw, err := filter.Execute(reply.HealthChecks)
+			if err != nil {
+				return err
+			}
+			reply.HealthChecks = raw.(structs.HealthChecks)
+			return nil
 		})
 }
 
@@ -74,6 +102,11 @@ func (h *Health) ServiceChecks(args *structs.ServiceSpecificRequest,
 
 	// Potentially forward
 	if done, err := h.srv.forward("Health.ServiceChecks", args, args, reply); done {
+		return err
+	}
+
+	filter, err := bexpr.CreateFilter(args.Filter, nil, reply.HealthChecks)
+	if err != nil {
 		return err
 	}
 
@@ -96,6 +129,13 @@ func (h *Health) ServiceChecks(args *structs.ServiceSpecificRequest,
 			if err := h.srv.filterACL(args.Token, reply); err != nil {
 				return err
 			}
+
+			raw, err := filter.Execute(reply.HealthChecks)
+			if err != nil {
+				return err
+			}
+			reply.HealthChecks = raw.(structs.HealthChecks)
+
 			return h.srv.sortNodesByDistanceFrom(args.Source, reply.HealthChecks)
 		})
 }
@@ -126,7 +166,7 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 	// we're trying to find proxies for, so check that.
 	if args.Connect {
 		// Fetch the ACL token, if any.
-		rule, err := h.srv.resolveToken(args.Token)
+		rule, err := h.srv.ResolveToken(args.Token)
 		if err != nil {
 			return err
 		}
@@ -137,7 +177,12 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 		}
 	}
 
-	err := h.srv.blockingQuery(
+	filter, err := bexpr.CreateFilter(args.Filter, nil, reply.Nodes)
+	if err != nil {
+		return err
+	}
+
+	err = h.srv.blockingQuery(
 		&args.QueryOptions,
 		&reply.QueryMeta,
 		func(ws memdb.WatchSet, state *state.Store) error {
@@ -150,9 +195,17 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 			if len(args.NodeMetaFilters) > 0 {
 				reply.Nodes = nodeMetaFilter(args.NodeMetaFilters, reply.Nodes)
 			}
+
 			if err := h.srv.filterACL(args.Token, reply); err != nil {
 				return err
 			}
+
+			raw, err := filter.Execute(reply.Nodes)
+			if err != nil {
+				return err
+			}
+			reply.Nodes = raw.(structs.CheckServiceNodes)
+
 			return h.srv.sortNodesByDistanceFrom(args.Source, reply.Nodes)
 		})
 
@@ -166,11 +219,17 @@ func (h *Health) ServiceNodes(args *structs.ServiceSpecificRequest, reply *struc
 
 		metrics.IncrCounterWithLabels([]string{"health", key, "query"}, 1,
 			[]metrics.Label{{Name: "service", Value: args.ServiceName}})
+		// DEPRECATED (singular-service-tag) - remove this when backwards RPC compat
+		// with 1.2.x is not required.
 		if args.ServiceTag != "" {
 			metrics.IncrCounterWithLabels([]string{"health", key, "query-tag"}, 1,
 				[]metrics.Label{{Name: "service", Value: args.ServiceName}, {Name: "tag", Value: args.ServiceTag}})
 		}
 		if len(args.ServiceTags) > 0 {
+			// Sort tags so that the metric is the same even if the request
+			// tags are in a different order
+			sort.Strings(args.ServiceTags)
+
 			labels := []metrics.Label{{Name: "service", Value: args.ServiceName}}
 			for _, tag := range args.ServiceTags {
 				labels = append(labels, metrics.Label{Name: "tag", Value: tag})
@@ -193,7 +252,9 @@ func (h *Health) serviceNodesConnect(ws memdb.WatchSet, s *state.Store, args *st
 }
 
 func (h *Health) serviceNodesTagFilter(ws memdb.WatchSet, s *state.Store, args *structs.ServiceSpecificRequest) (uint64, structs.CheckServiceNodes, error) {
-	// DNS service lookups populate the ServiceTag field. In this case,
+	// DEPRECATED (singular-service-tag) - remove this when backwards RPC compat
+	// with 1.2.x is not required.
+	// Agents < v1.3.0 populate the ServiceTag field. In this case,
 	// use ServiceTag instead of the ServiceTags field.
 	if args.ServiceTag != "" {
 		return s.CheckServiceTagNodes(ws, args.ServiceName, []string{args.ServiceTag})
