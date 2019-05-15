@@ -49,6 +49,9 @@ type ModuleStatus struct {
 
 // Module is the Schema for the modules API
 // +k8s:openapi-gen=true
+// +kubebuilder:printcolumn:name="Service",type="string",JSONPath=".metadata.ownerReferences[0].name",description="the parent service.core.automium.io"
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase",description="the execution phase"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:subresource:status
 type Module struct {
 	metav1.TypeMeta   `json:",inline"`
