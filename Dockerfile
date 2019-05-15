@@ -1,4 +1,4 @@
-FROM golang:1.10.3 as builder
+FROM golang:1.12.5 as builder
 
 # Retrieve kubebuilder from Github
 RUN wget --no-verbose https://github.com/kubernetes-sigs/kubebuilder/releases/download/v1.0.8/kubebuilder_1.0.8_linux_amd64.tar.gz && \
