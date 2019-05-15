@@ -40,16 +40,6 @@ spec:
           type: object
         status:
           properties:
-            nodeApplicationProperties:
-              properties:
-                name:
-                  type: string
-                version:
-                  type: string
-              required:
-              - name
-              - version
-              type: object
             nodeHealthChecks:
               items:
                 properties:
@@ -80,6 +70,8 @@ spec:
                   type: string
                 id:
                   type: string
+                image:
+                  type: string
                 node:
                   type: string
                 publicAddress:
@@ -89,6 +81,7 @@ spec:
               - node
               - address
               - publicAddress
+              - image
               type: object
           type: object
   version: v1beta1

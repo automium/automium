@@ -39,6 +39,7 @@ type NodePropertiesStatusSpec struct {
 	Node          string `json:"node"`
 	Address       string `json:"address"`
 	PublicAddress string `json:"publicAddress"`
+	Image         string `json:"image"`
 }
 
 // NodeSpec defines the desired state of Node
@@ -47,17 +48,10 @@ type NodeSpec struct {
 	DeletionDate string `json:"deletionDate"`
 }
 
-// NodeApplicationPropertiesSpec contains the information about the deployed application on the node
-type NodeApplicationPropertiesSpec struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
 // NodeStatus defines the observed state of Node
 type NodeStatus struct {
-	NodeProperties            NodePropertiesStatusSpec      `json:"nodeProperties,omitempty"`
-	NodeHealthChecks          []NodeHealthCheckStatusSpec   `json:"nodeHealthChecks,omitempty"`
-	NodeApplicationProperties NodeApplicationPropertiesSpec `json:"nodeApplicationProperties,omitempty"`
+	NodeProperties   NodePropertiesStatusSpec    `json:"nodeProperties,omitempty"`
+	NodeHealthChecks []NodeHealthCheckStatusSpec `json:"nodeHealthChecks,omitempty"`
 }
 
 // +genclient
