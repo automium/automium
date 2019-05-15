@@ -224,9 +224,12 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		deploy.Spec.Action = "Deploy"
 		err = r.Create(context.TODO(), deploy)
 		if err != nil {
+			glog.Infof("cannot create module %s: %s\n", deploy.Name, err.Error())
 			return reconcile.Result{}, err
 		}
+		return reconcile.Result{}, nil
 	} else if err != nil {
+		glog.Infof("cannot get module %s: %s\n", deploy.Name, err.Error())
 		return reconcile.Result{}, err
 	}
 
