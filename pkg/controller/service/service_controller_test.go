@@ -33,19 +33,19 @@ import (
 
 var c client.Client
 
-var expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo", Namespace: "default"}}
-var depKey = types.NamespacedName{Name: "foo-module", Namespace: "default"}
+var expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: "kubetest", Namespace: "default"}}
+var depKey = types.NamespacedName{Name: "kubetest-module", Namespace: "default"}
 
 const timeout = time.Second * 5
 
 func TestReconcile(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	labels := map[string]string{"app": "example"}
-	instance := &corev1beta1.Service{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default", Labels: labels}}
+	labels := map[string]string{"app": "kubernetes-cluster"}
+	instance := &corev1beta1.Service{ObjectMeta: metav1.ObjectMeta{Name: "kubetest", Namespace: "default", Labels: labels}}
 	instance.Spec = corev1beta1.ServiceSpec{
 		Replicas: 1,
-		Flavor:   "flavor1",
-		Version:  "1.0.0",
+		Flavor:   "e3standard.x4",
+		Version:  "v1.13.5-128",
 	}
 
 	// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
