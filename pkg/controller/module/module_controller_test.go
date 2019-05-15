@@ -38,7 +38,7 @@ var c client.Client
 var expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo", Namespace: "default"}}
 var depKey = types.NamespacedName{Name: "foo-job", Namespace: "default"}
 
-const timeout = time.Second * 5
+const timeout = time.Second * 10
 
 func TestReconcile(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
