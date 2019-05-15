@@ -45,6 +45,7 @@ type ServiceStatus struct {
 
 // Service is the Schema for the services API
 // +k8s:openapi-gen=true
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
 type Service struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
