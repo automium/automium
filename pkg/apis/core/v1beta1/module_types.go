@@ -51,6 +51,8 @@ type ModuleStatus struct {
 // +k8s:openapi-gen=true
 // +kubebuilder:printcolumn:name="Service",type="string",JSONPath=".metadata.ownerReferences[0].name",description="the parent service.core.automium.io"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase",description="the execution phase"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.updatedReplicas",description="Ready node replicas"
+// +kubebuilder:printcolumn:name="Requested",type="string",JSONPath=".status.replicas",description="Requested node replicas"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:subresource:status
 type Module struct {

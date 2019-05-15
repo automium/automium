@@ -15,6 +15,14 @@ spec:
     description: the execution phase
     name: Status
     type: string
+  - JSONPath: .status.updatedReplicas
+    description: Ready node replicas
+    name: Ready
+    type: string
+  - JSONPath: .status.replicas
+    description: Requested node replicas
+    name: Requested
+    type: string
   - JSONPath: .metadata.creationTimestamp
     name: Age
     type: date
