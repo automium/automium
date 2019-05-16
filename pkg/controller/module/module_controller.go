@@ -32,6 +32,7 @@ import (
 	"github.com/golang/glog"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -152,6 +153,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	)
 
 	var retryCount int32 = 1
+	var ndots = "1"
 	// Define the desired Job object
 	deploy := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -177,6 +179,14 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 						},
 					},
 					RestartPolicy: corev1.RestartPolicyNever,
+					DNSConfig: &v1.PodDNSConfig{
+						Options: []v1.PodDNSConfigOption{
+							{
+								Name:  "ndots",
+								Value: &ndots,
+							},
+						},
+					},
 				},
 			},
 			BackoffLimit: &retryCount,
