@@ -260,126 +260,10 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{Requeue: true}, nil
 	}
 
-	appName := instance.ObjectMeta.Annotations["module.automium.io/appName"]
-	serviceName := instance.ObjectMeta.Annotations["service.automium.io/name"]
-
-	// Retrieve all nodes for this namespace
-	nsNodes := &corev1beta1.NodeList{}
-	err = r.List(context.TODO(), &client.ListOptions{Namespace: deploy.Namespace}, nsNodes)
+	err = r.manageNodesForModule(instance)
 	if err != nil {
-		glog.Errorf("cannot get nodes for namespace %s: %s\n", deploy.Namespace, err.Error())
-		return reconcile.Result{}, err
-	}
-
-	// Search for existent nodes for service
-	appNodes := make([]corev1beta1.Node, 0)
-	for _, node := range nsNodes.Items {
-		if node.ObjectMeta.Annotations["service.automium.io/name"] == serviceName {
-			glog.V(2).Infof("found node %s for app %s\n", node.Spec.Hostname, serviceName)
-			appNodes = append(appNodes, node)
-		}
-	}
-
-	// Special cases (nonexistent, delete all)
-	if instance.Spec.Replicas == 0 && len(appNodes) > 0 {
-		// Delete all nodes
-		glog.V(2).Infof("service %s has no replicas - marking all nodes for deletion.\n", serviceName)
-		for _, item := range appNodes {
-			item.Spec.DeletionDate = time.Now().String()
-			r.Update(context.TODO(), &item)
-		}
-		return reconcile.Result{Requeue: true}, nil
-	}
-
-	if len(appNodes) == 0 || len(appNodes) < instance.Spec.Replicas {
-		// Add all items
-
-		replicasCount := instance.Spec.Replicas
-		if appName == "orchestrator" {
-			replicasCount = 3 * instance.Spec.Replicas // In this case a replica consists in 3 VMs
-		}
-
-		for i := 0; i < replicasCount; i++ {
-			var specHostname string
-			switch appName {
-			case "kubernetes-cluster":
-				specHostname = fmt.Sprintf("%s-%s-%d", serviceName, serviceName, i)
-			case "kubernetes-nodepool":
-				var clusterName string
-
-				for _, val := range instance.Spec.Env {
-					if val.Name == "CLUSTER_NAME" {
-						clusterName = val.Value
-					}
-				}
-
-				if clusterName == "" {
-					glog.Warningln("nodes for Kubenernetes nodepool requested but empty cluster_name provided -- marking as 'nocluster' nodepool")
-					clusterName = "nocluster"
-				}
-
-				specHostname = fmt.Sprintf("%s-%s-%d", clusterName, serviceName, i)
-			default:
-				specHostname = fmt.Sprintf("%s-%d", appName, i)
-			}
-			err := r.Create(context.TODO(), &corev1beta1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-node-%d", serviceName, i),
-					Namespace: instance.Namespace,
-					Annotations: map[string]string{
-						"service.automium.io/name": serviceName,
-					},
-				},
-				Spec: corev1beta1.NodeSpec{
-					Hostname:     specHostname,
-					DeletionDate: "",
-				},
-			})
-			if err != nil {
-				glog.Errorf("cannot create node %s: %s\n", fmt.Sprintf("%s-node-%d", serviceName, i), err.Error())
-			}
-		}
-
-		return reconcile.Result{}, nil
-	}
-
-	if len(appNodes) > instance.Spec.Replicas && appName != "orchestrator" {
-		err := sortNodesByNumber(appNodes)
-		if err != nil {
-			glog.Warningf("cannot sorting nodes for removal: %s -- skipping\n", err.Error())
-			return reconcile.Result{}, err
-		}
-		glog.V(2).Infoln("sorted nodes:")
-		for idx, item := range appNodes {
-			glog.V(2).Infof("[%d] %s\n", idx, item.Spec.Hostname)
-		}
-		arrToDelete := appNodes[instance.Spec.Replicas:len(appNodes)]
-		glog.V(2).Infof("service %s - node replicas: %d -> %d\n", appName, len(appNodes), instance.Spec.Replicas)
-
-		for _, item := range arrToDelete {
-			glog.V(2).Infof("service: %s - marking for deletion node %s\n", appName, item.Spec.Hostname)
-			item.Spec.DeletionDate = time.Now().String()
-			r.Update(context.TODO(), &item)
-		}
-	}
-
-	if appName == "orchestrator" && (len(appNodes) > instance.Spec.Replicas*3) {
-		err := sortNodesByNumber(appNodes)
-		if err != nil {
-			glog.Warningf("cannot sorting nodes for removal: %s -- skipping\n", err.Error())
-			return reconcile.Result{}, err
-		}
-		glog.V(2).Infoln("sorted nodes:")
-		for idx, item := range appNodes {
-			glog.V(2).Infof("[%d] %s\n", idx, item.Spec.Hostname)
-		}
-		arrToDelete := appNodes[instance.Spec.Replicas:len(appNodes)]
-		glog.V(2).Infof("service %s - node replicas: %d -> %d\n", appName, len(appNodes), instance.Spec.Replicas)
-		for _, item := range arrToDelete {
-			glog.V(2).Infof("service: %s - marking for deletion node %s\n", appName, item.Spec.Hostname)
-			item.Spec.DeletionDate = time.Now().String()
-			r.Update(context.TODO(), &item)
-		}
+		glog.Errorf("cannot manage node for module %s: %s -- retrying in 5s.\n", instance.Name, err.Error())
+		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// Retrieve job status
@@ -527,4 +411,98 @@ func nodeIsHealthy(node corev1beta1.Node) bool {
 	}
 
 	return true
+}
+
+func (r *ReconcileModule) manageNodesForModule(module *corev1beta1.Module) error {
+	appName := module.ObjectMeta.Annotations["module.automium.io/appName"]
+	serviceName := module.ObjectMeta.Annotations["service.automium.io/name"]
+
+	if appName == "" || serviceName == "" {
+		return goerrors.New("missing application and or service annotations in module, cannot continue")
+	}
+
+	// Retrieve all nodes for this namespace
+	nsNodes := &corev1beta1.NodeList{}
+	err := r.List(context.TODO(), &client.ListOptions{Namespace: module.Namespace}, nsNodes)
+	if err != nil {
+		return err
+	}
+
+	// Search for existent nodes for service
+	appNodes := make([]corev1beta1.Node, 0)
+	for _, node := range nsNodes.Items {
+		if node.ObjectMeta.Annotations["service.automium.io/name"] == serviceName {
+			glog.V(2).Infof("found node %s for app %s\n", node.Spec.Hostname, serviceName)
+			appNodes = append(appNodes, node)
+		}
+	}
+
+	// Add all items or the missing items
+	if len(appNodes) < module.Spec.Replicas {
+		for i := 0; i < module.Spec.Replicas; i++ {
+			// Prepare the hostname
+			var specHostname string
+			switch appName {
+			case "kubernetes-cluster":
+				specHostname = fmt.Sprintf("%s-%s-%d", serviceName, serviceName, i)
+			case "kubernetes-nodepool":
+				var clusterName string
+
+				for _, val := range module.Spec.Env {
+					if val.Name == "CLUSTER_NAME" {
+						clusterName = val.Value
+					}
+				}
+
+				if clusterName == "" {
+					return goerrors.New("requested a Kubernetes nodepool but no cluster_name env variable provided, cannot continue")
+				}
+
+				specHostname = fmt.Sprintf("%s-%s-%d", clusterName, serviceName, i)
+			default:
+				specHostname = fmt.Sprintf("%s-%d", appName, i)
+			}
+
+			// Create the node item
+			err := r.Create(context.TODO(), &corev1beta1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%s-node-%d", serviceName, i),
+					Namespace: module.Namespace,
+					Annotations: map[string]string{
+						"service.automium.io/name": serviceName,
+					},
+				},
+				Spec: corev1beta1.NodeSpec{
+					Hostname:     specHostname,
+					DeletionDate: "",
+				},
+			})
+			if err != nil && !errors.IsAlreadyExists(err) {
+				return err
+			}
+		}
+	} else if len(appNodes) > module.Spec.Replicas {
+		// Delete extra nodes
+		err := sortNodesByNumber(appNodes)
+		if err != nil {
+			return err
+		}
+
+		glog.V(2).Infoln("sorted nodes:")
+		for idx, item := range appNodes {
+			glog.V(2).Infof("[%d] %s\n", idx, item.Spec.Hostname)
+		}
+
+		arrToDelete := appNodes[module.Spec.Replicas:len(appNodes)]
+		glog.V(2).Infof("service %s - node replicas: %d -> %d\n", appName, len(appNodes), module.Spec.Replicas)
+
+		for _, item := range arrToDelete {
+			glog.V(2).Infof("service: %s - marking for deletion node %s\n", appName, item.Spec.Hostname)
+			item.Spec.DeletionDate = time.Now().String()
+			r.Update(context.TODO(), &item)
+		}
+	}
+
+	return nil
+
 }
