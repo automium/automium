@@ -391,6 +391,12 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 
 	// Manage module status
 	glog.V(5).Infof("Updating module %s status...\n", instance.Name)
+
+	// If updated replicas are not equal to the desidered replicas, and the module is completed, return failure
+	if instance.Status.UpdatedReplicas != instance.Status.Replicas && status == corev1beta1.StatusPhaseCompleted {
+		status = corev1beta1.StatusPhaseFailed
+	}
+
 	err = r.updateModuleStatus(instance, status)
 	if err != nil {
 		glog.Errorf("cannot update module %s status: %s\n", instance.Name, err.Error())
