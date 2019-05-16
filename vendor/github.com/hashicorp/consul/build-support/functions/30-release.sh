@@ -256,7 +256,6 @@ function check_release_one {
    expected_files+=("${CONSUL_PKG_NAME}_${2}_darwin_amd64.zip")
    expected_files+=("${CONSUL_PKG_NAME}_${2}_freebsd_386.zip")
    expected_files+=("${CONSUL_PKG_NAME}_${2}_freebsd_amd64.zip")
-   expected_files+=("${CONSUL_PKG_NAME}_${2}_freebsd_arm.zip")
    expected_files+=("${CONSUL_PKG_NAME}_${2}_linux_386.zip")
    expected_files+=("${CONSUL_PKG_NAME}_${2}_linux_amd64.zip")
    expected_files+=("${CONSUL_PKG_NAME}_${2}_linux_arm.zip")
@@ -458,14 +457,6 @@ function build_release {
          return 1
       fi
       
-      status_stage "==> Building Legacy UI for version ${vers}"
-      build_ui_legacy "${sdir}" "${UI_LEGACY_BUILD_TAG}"
-      if test $? -ne 0
-      then
-         err "ERROR: Failed to build the legacy ui" 
-         return 1
-      fi
-      
       status_stage "==> Building UI for version ${vers}"
       # passing the version to override the version determined via tags
       build_ui "${sdir}" "${UI_BUILD_TAG}" "${vers}"
@@ -474,7 +465,7 @@ function build_release {
          err "ERROR: Failed to build the ui" 
          return 1
       fi
-      status "UI Built with Version: $(ui_version "${sdir}/pkg/web_ui/v2/index.html")"
+      status "UI Built with Version: $(ui_version "${sdir}/pkg/web_ui/index.html")"
       
       status_stage "==> Building Static Assets for version ${vers}"
       build_assetfs "${sdir}" "${GO_BUILD_TAG}"

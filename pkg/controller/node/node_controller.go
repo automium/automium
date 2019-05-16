@@ -67,6 +67,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	glog.Infoln("node controller initialized")
+
 	return nil
 }
 
@@ -184,6 +186,7 @@ func (r *ReconcileNode) Reconcile(request reconcile.Request) (reconcile.Result, 
 		Node:          nodeInfo.Node.Node,
 		Address:       nodeInfo.Node.Address,
 		PublicAddress: nodeFIP,
+		Image:         nodeInfo.Node.Meta["image"],
 	}
 
 	// Populate node health checks

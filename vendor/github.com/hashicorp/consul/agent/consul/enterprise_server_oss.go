@@ -1,4 +1,4 @@
-// +build !ent
+// +build !consulent
 
 package consul
 
@@ -29,4 +29,8 @@ func (s *Server) handleEnterpriseRPCConn(rtype pool.RPCType, conn net.Conn, isTL
 
 func (s *Server) enterpriseStats() map[string]map[string]string {
 	return nil
+}
+
+func (s *Server) intentionReplicationEnabled() bool {
+	return false
 }

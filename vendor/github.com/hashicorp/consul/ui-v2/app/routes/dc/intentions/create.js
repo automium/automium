@@ -6,8 +6,8 @@ import WithIntentionActions from 'consul-ui/mixins/intention/with-actions';
 
 export default Route.extend(WithIntentionActions, {
   templateName: 'dc/intentions/edit',
-  repo: service('intentions'),
-  servicesRepo: service('services'),
+  repo: service('repository/intention'),
+  servicesRepo: service('repository/service'),
   beforeModel: function() {
     get(this, 'repo').invalidate();
   },
@@ -32,7 +32,6 @@ export default Route.extend(WithIntentionActions, {
     });
   },
   setupController: function(controller, model) {
-    this._super(...arguments);
     controller.setProperties(model);
   },
   deactivate: function() {

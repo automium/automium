@@ -1,6 +1,7 @@
 package consul
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -17,7 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/consul/acl"
 	ca "github.com/hashicorp/consul/agent/connect/ca"
 	"github.com/hashicorp/consul/agent/consul/autopilot"
 	"github.com/hashicorp/consul/agent/consul/fsm"
@@ -94,11 +94,33 @@ type Server struct {
 	// sentinel is the Sentinel code engine (can be nil).
 	sentinel sentinel.Evaluator
 
-	// aclAuthCache is the authoritative ACL cache.
-	aclAuthCache *acl.Cache
+	// acls is used to resolve tokens to effective policies
+	acls *ACLResolver
 
-	// aclCache is the non-authoritative ACL cache.
-	aclCache *aclCache
+	// aclUpgradeCancel is used to cancel the ACL upgrade goroutine when we
+	// lose leadership
+	aclUpgradeCancel  context.CancelFunc
+	aclUpgradeLock    sync.RWMutex
+	aclUpgradeEnabled bool
+
+	// aclReplicationCancel is used to shut down the ACL replication goroutine
+	// when we lose leadership
+	aclReplicationCancel  context.CancelFunc
+	aclReplicationLock    sync.RWMutex
+	aclReplicationEnabled bool
+
+	// aclTokenReapCancel is used to shut down the ACL Token expiration reap
+	// goroutine when we lose leadership.
+	aclTokenReapCancel  context.CancelFunc
+	aclTokenReapLock    sync.RWMutex
+	aclTokenReapEnabled bool
+
+	aclAuthMethodValidators    map[string]*authMethodValidatorEntry
+	aclAuthMethodValidatorLock sync.RWMutex
+
+	// DEPRECATED (ACL-Legacy-Compat) - only needed while we support both
+	// useNewACLs is used to determine whether we can use new ACLs or not
+	useNewACLs int32
 
 	// autopilot is the Autopilot instance for this server.
 	autopilot *autopilot.Autopilot
@@ -124,6 +146,10 @@ type Server struct {
 
 	// Consul configuration
 	config *Config
+
+	// configReplicator is used to manage the leaders replication routines for
+	// centralized config
+	configReplicator *Replicator
 
 	// tokens holds ACL tokens initially from the configuration, but can
 	// be updated at runtime, so should always be used instead of going to
@@ -239,13 +265,19 @@ type Server struct {
 	EnterpriseServer
 }
 
+// NewServer is only used to help setting up a server for testing. Normal code
+// exercises NewServerLogger.
 func NewServer(config *Config) (*Server, error) {
-	return NewServerLogger(config, nil, new(token.Store))
+	c, err := tlsutil.NewConfigurator(config.ToTLSUtilConfig(), nil)
+	if err != nil {
+		return nil, err
+	}
+	return NewServerLogger(config, nil, new(token.Store), c)
 }
 
-// NewServer is used to construct a new Consul server from the
+// NewServerLogger is used to construct a new Consul server from the
 // configuration, potentially returning an error
-func NewServerLogger(config *Config, logger *log.Logger, tokens *token.Store) (*Server, error) {
+func NewServerLogger(config *Config, logger *log.Logger, tokens *token.Store, tlsConfigurator *tlsutil.Configurator) (*Server, error) {
 	// Check the protocol version.
 	if err := config.CheckProtocolVersion(); err != nil {
 		return nil, err
@@ -274,17 +306,13 @@ func NewServerLogger(config *Config, logger *log.Logger, tokens *token.Store) (*
 		config.UseTLS = true
 	}
 
-	// Create the TLS wrapper for outgoing connections.
-	tlsConf := config.tlsConfig()
-	tlsWrap, err := tlsConf.OutgoingTLSWrapper()
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the incoming TLS config.
-	incomingTLS, err := tlsConf.IncomingTLSConfig()
-	if err != nil {
-		return nil, err
+	// Set the primary DC if it wasn't set.
+	if config.PrimaryDatacenter == "" {
+		if config.ACLDatacenter != "" {
+			config.PrimaryDatacenter = config.ACLDatacenter
+		} else {
+			config.PrimaryDatacenter = config.Datacenter
+		}
 	}
 
 	// Create the tombstone GC.
@@ -301,7 +329,7 @@ func NewServerLogger(config *Config, logger *log.Logger, tokens *token.Store) (*
 		LogOutput:  config.LogOutput,
 		MaxTime:    serverRPCCache,
 		MaxStreams: serverMaxStreams,
-		TLSWrapper: tlsWrap,
+		TLSWrapper: tlsConfigurator.OutgoingRPCWrapper(),
 		ForceTLS:   config.VerifyOutgoing,
 	}
 
@@ -317,7 +345,7 @@ func NewServerLogger(config *Config, logger *log.Logger, tokens *token.Store) (*
 		reconcileCh:      make(chan serf.Member, reconcileChSize),
 		router:           router.NewRouter(logger, config.Datacenter),
 		rpcServer:        rpc.NewServer(),
-		rpcTLS:           incomingTLS,
+		rpcTLS:           tlsConfigurator.IncomingRPCConfig(),
 		reassertLeaderCh: make(chan chan error),
 		segmentLAN:       make(map[string]*serf.Serf, len(config.Segments)),
 		sessionTimers:    NewSessionTimers(),
@@ -332,30 +360,40 @@ func NewServerLogger(config *Config, logger *log.Logger, tokens *token.Store) (*
 		return nil, err
 	}
 
+	configReplicatorConfig := ReplicatorConfig{
+		Name:        "Config Entry",
+		ReplicateFn: s.replicateConfig,
+		Rate:        s.config.ConfigReplicationRate,
+		Burst:       s.config.ConfigReplicationBurst,
+		Logger:      logger,
+	}
+	s.configReplicator, err = NewReplicator(&configReplicatorConfig)
+	if err != nil {
+		s.Shutdown()
+		return nil, err
+	}
+
 	// Initialize the stats fetcher that autopilot will use.
 	s.statsFetcher = NewStatsFetcher(logger, s.connPool, s.config.Datacenter)
 
-	// Initialize the authoritative ACL cache.
 	s.sentinel = sentinel.New(logger)
-	s.aclAuthCache, err = acl.NewCache(aclCacheSize, s.aclLocalFault, s.sentinel)
-	if err != nil {
-		s.Shutdown()
-		return nil, fmt.Errorf("Failed to create authoritative ACL cache: %v", err)
+	s.useNewACLs = 0
+	aclConfig := ACLResolverConfig{
+		Config:      config,
+		Delegate:    s,
+		CacheConfig: serverACLCacheConfig,
+		AutoDisable: false,
+		Logger:      logger,
+		Sentinel:    s.sentinel,
 	}
-
-	// Set up the non-authoritative ACL cache. A nil local function is given
-	// if ACL replication isn't enabled.
-	var local acl.FaultFunc
-	if s.IsACLReplicationEnabled() {
-		local = s.aclLocalFault
-	}
-	if s.aclCache, err = newACLCache(config, logger, s.RPC, local, s.sentinel); err != nil {
+	// Initialize the ACL resolver.
+	if s.acls, err = NewACLResolver(&aclConfig); err != nil {
 		s.Shutdown()
-		return nil, fmt.Errorf("Failed to create non-authoritative ACL cache: %v", err)
+		return nil, fmt.Errorf("Failed to create ACL resolver: %v", err)
 	}
 
 	// Initialize the RPC layer.
-	if err := s.setupRPC(tlsWrap); err != nil {
+	if err := s.setupRPC(tlsConfigurator.OutgoingRPCWrapper()); err != nil {
 		s.Shutdown()
 		return nil, fmt.Errorf("Failed to start RPC layer: %v", err)
 	}
@@ -443,14 +481,13 @@ func NewServerLogger(config *Config, logger *log.Logger, tokens *token.Store) (*
 		return nil, err
 	}
 
+	// Initialize Autopilot. This must happen before starting leadership monitoring
+	// as establishing leadership could attempt to use autopilot and cause a panic.
+	s.initAutopilot(config)
+
 	// Start monitoring leadership. This must happen after Serf is set up
 	// since it can fire events when leadership is obtained.
 	go s.monitorLeadership()
-
-	// Start ACL replication.
-	if s.IsACLReplicationEnabled() {
-		go s.runACLReplication()
-	}
 
 	// Start listening for RPC requests.
 	go s.listen(s.Listener)
@@ -462,9 +499,6 @@ func NewServerLogger(config *Config, logger *log.Logger, tokens *token.Store) (*
 
 	// Start the metrics handlers.
 	go s.sessionStats()
-
-	// Initialize Autopilot
-	s.initAutopilot(config)
 
 	return s, nil
 }
@@ -498,6 +532,7 @@ func (s *Server) setupRaft() error {
 		MaxPool:               3,
 		Timeout:               10 * time.Second,
 		ServerAddressProvider: serverAddressProvider,
+		Logger:                s.logger,
 	}
 
 	trans := raft.NewNetworkTransportWithConfig(transConfig)
@@ -1057,6 +1092,17 @@ func (s *Server) Stats() map[string]map[string]string {
 		"serf_lan": s.serfLAN.Stats(),
 		"runtime":  runtimeStats(),
 	}
+
+	if s.ACLsEnabled() {
+		if s.UseLegacyACLs() {
+			stats["consul"]["acl"] = "legacy"
+		} else {
+			stats["consul"]["acl"] = "enabled"
+		}
+	} else {
+		stats["consul"]["acl"] = "disabled"
+	}
+
 	if s.serfWAN != nil {
 		stats["serf_wan"] = s.serfWAN.Stats()
 	}
@@ -1095,6 +1141,11 @@ func (s *Server) GetLANCoordinate() (lib.CoordinateSet, error) {
 // ReloadConfig is used to have the Server do an online reload of
 // relevant configuration information
 func (s *Server) ReloadConfig(config *Config) error {
+	if s.IsLeader() {
+		// only bootstrap the config entries if we are the leader
+		// this will error if we lose leadership while bootstrapping here.
+		return s.bootstrapConfigEntries(config.ConfigEntryBootstrap)
+	}
 	return nil
 }
 

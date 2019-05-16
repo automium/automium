@@ -1,6 +1,17 @@
-%action-group label {
-  border-radius: $radius-small;
+%action-group label:first-of-type {
+  @extend %toggle-button;
+}
+%action-group input[type='radio']:checked + label:first-of-type {
+  /* frame-gray */
+  background-color: $gray-050;
+}
+%action-group label,
+%action-group-action {
   cursor: pointer;
+}
+%action-group label:first-of-type::after {
+  @extend %with-more-horizontal-icon, %as-pseudo;
+  opacity: 0.7;
 }
 %action-group ul {
   border: $decor-border-100;
@@ -13,25 +24,15 @@
 }
 %action-group ul,
 %action-group ul::before {
-  border-color: $ui-color-action;
+  border-color: $color-action;
 }
-%action-group input[type='radio']:checked + label:first-of-type,
-%action-group label:first-of-type:hover {
-  background-color: $ui-gray-050;
+%action-group-action {
+  background-color: $white;
 }
-%action-group label:first-of-type:active {
-  background-color: $ui-gray-100;
-}
-%action-group li a:hover {
-  background-color: $ui-color-action;
-  color: $ui-white;
+%action-group-action:hover {
+  @extend %frame-blue-800;
 }
 %action-group ul,
 %action-group ul::before {
-  background-color: $ui-white;
-}
-%action-group label::after,
-%action-group label::before,
-%action-group::before {
-  @extend %with-dot;
+  background-color: $white;
 }

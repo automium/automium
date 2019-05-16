@@ -38,8 +38,10 @@ type ModuleSpec struct {
 
 // ModuleStatus defines the observed state of Module
 type ModuleStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	Phase           string `json:"phase"`
+	Replicas        int    `json:"replicas"`
+	CurrentReplicas int    `json:"currentReplicas"`
+	UpdatedReplicas int    `json:"updatedReplicas"`
 }
 
 // +genclient
@@ -47,6 +49,12 @@ type ModuleStatus struct {
 
 // Module is the Schema for the modules API
 // +k8s:openapi-gen=true
+// +kubebuilder:printcolumn:name="Service",type="string",JSONPath=".metadata.ownerReferences[0].name",description="the parent service.core.automium.io"
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase",description="the execution phase"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.updatedReplicas",description="Ready node replicas"
+// +kubebuilder:printcolumn:name="Requested",type="string",JSONPath=".status.replicas",description="Requested node replicas"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:subresource:status
 type Module struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

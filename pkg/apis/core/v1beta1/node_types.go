@@ -39,21 +39,8 @@ type NodePropertiesStatusSpec struct {
 	Node          string `json:"node"`
 	Address       string `json:"address"`
 	PublicAddress string `json:"publicAddress"`
+	Image         string `json:"image"`
 }
-
-// NodeServiceStatusSpec contains the basic data of service on a node obtained from Consul
-// type NodeServiceStatusSpec struct {
-// 	ID      string `json:"id"`
-// 	Service string `json:"service"`
-// 	Port    int    `json:"port"`
-// 	Address string `json:"address"`
-// }
-
-// NodeServicesStatusSpec is a struct which contains the service name and the service data obtained from Consul
-// type NodeServicesStatusSpec struct {
-// 	ServiceName string                `json:"serviceName"`
-// 	ServiceData NodeServiceStatusSpec `json:"serviceData"`
-// }
 
 // NodeSpec defines the desired state of Node
 type NodeSpec struct {
@@ -63,8 +50,7 @@ type NodeSpec struct {
 
 // NodeStatus defines the observed state of Node
 type NodeStatus struct {
-	NodeProperties NodePropertiesStatusSpec `json:"nodeProperties,omitempty"`
-	//NodeServices     []NodeServicesStatusSpec    `json:"nodeServices,omitempty"`
+	NodeProperties   NodePropertiesStatusSpec    `json:"nodeProperties,omitempty"`
 	NodeHealthChecks []NodeHealthCheckStatusSpec `json:"nodeHealthChecks,omitempty"`
 }
 

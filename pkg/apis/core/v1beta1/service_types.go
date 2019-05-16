@@ -38,8 +38,6 @@ type ServiceSpec struct {
 
 // ServiceStatus defines the observed state of Service
 type ServiceStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 }
 
 // +genclient
@@ -47,6 +45,7 @@ type ServiceStatus struct {
 
 // Service is the Schema for the services API
 // +k8s:openapi-gen=true
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
 type Service struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

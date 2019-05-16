@@ -20,11 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -82,6 +78,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if err != nil {
 		return err
 	}
+
+	glog.Infoln("service controller initialized")
 
 	return nil
 }
@@ -199,6 +197,11 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-module", instance.Name),
 			Namespace: instance.Namespace,
+			Annotations: map[string]string{
+				"service.automium.io/name":      instance.Name,
+				"module.automium.io/appName":    instance.ObjectMeta.Labels["app"],
+				"module.automium.io/appVersion": instance.Spec.Version,
+			},
 		},
 		Spec: corev1beta1.ModuleSpec{
 			Source:   appProvisioner,
@@ -221,9 +224,12 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		deploy.Spec.Action = "Deploy"
 		err = r.Create(context.TODO(), deploy)
 		if err != nil {
+			glog.Infof("cannot create module %s: %s\n", deploy.Name, err.Error())
 			return reconcile.Result{}, err
 		}
+		return reconcile.Result{}, nil
 	} else if err != nil {
+		glog.Infof("cannot get module %s: %s\n", deploy.Name, err.Error())
 		return reconcile.Result{}, err
 	}
 
@@ -237,145 +243,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 			return reconcile.Result{}, err
 		}
 	}
-
-	appName := instance.ObjectMeta.Labels["app"] // this will be for example 'haproxy'
-
-	// Retrieve all nodes for this namespace
-	nsNodes := &corev1beta1.NodeList{}
-	err = r.List(context.TODO(), &client.ListOptions{Namespace: deploy.Namespace}, nsNodes)
-	if err != nil {
-		glog.Errorf("cannot get nodes for namespace %s: %s\n", deploy.Namespace, err.Error())
-		return reconcile.Result{}, err
-	}
-
-	// Search for existent nodes for service
-	appNodes := make([]corev1beta1.Node, 0)
-	for _, node := range nsNodes.Items {
-		if node.ObjectMeta.Annotations["service.automium.io/name"] == instance.Name {
-			glog.V(2).Infof("found node %s for app %s\n", node.Spec.Hostname, instance.Name)
-			appNodes = append(appNodes, node)
-		}
-	}
-
-	// Special cases (nonexistent, delete all)
-	if instance.Spec.Replicas == 0 && len(appNodes) > 0 {
-		// Delete all nodes
-		glog.V(2).Infof("service %s has no replicas - removing all nodes.\n", instance.Name)
-		for _, item := range appNodes {
-			r.Delete(context.TODO(), &item)
-		}
-		return reconcile.Result{}, nil
-	}
-
-	if len(appNodes) == 0 || len(appNodes) < instance.Spec.Replicas {
-		// Add all items
-
-		replicasCount := instance.Spec.Replicas
-		if appName == "orchestrator" {
-			replicasCount = 3 * instance.Spec.Replicas // In this case a replica consists in 3 VMs
-		}
-
-		for i := 0; i < replicasCount; i++ {
-			var specHostname string
-			switch appName {
-			case "kubernetes-cluster":
-				specHostname = fmt.Sprintf("%s-%s-%d", instance.Name, instance.Name, i)
-			case "kubernetes-nodepool":
-				var clusterName string
-
-				for _, val := range instance.Spec.Env {
-					if val.Name == "cluster_name" {
-						clusterName = val.Value
-					}
-				}
-
-				if clusterName == "" {
-					glog.Warningln("nodes for Kubenernetes nodepool requested but empty cluster_name provided -- marking as 'nocluster' nodepool")
-					clusterName = "nocluster"
-				}
-
-				specHostname = fmt.Sprintf("%s-%s-%d", clusterName, instance.Name, i)
-			default:
-				specHostname = fmt.Sprintf("%s-%d", appName, i)
-			}
-			r.Create(context.TODO(), &corev1beta1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-node-%d", instance.Name, i),
-					Namespace: instance.Namespace,
-					Annotations: map[string]string{
-						"service.automium.io/name": instance.Name,
-					},
-				},
-				Spec: corev1beta1.NodeSpec{
-					Hostname:     specHostname,
-					DeletionDate: "",
-				},
-			})
-		}
-		return reconcile.Result{}, nil
-	}
-
-	if len(appNodes) > instance.Spec.Replicas && appName != "orchestrator" {
-		err := sortNodesByNumber(appNodes)
-		if err != nil {
-			glog.Warningf("cannot sorting nodes for removal: %s -- skipping\n", err.Error())
-			return reconcile.Result{}, err
-		}
-		glog.V(2).Infoln("sorted nodes:")
-		for idx, item := range appNodes {
-			glog.V(2).Infof("[%d] %s\n", idx, item.Spec.Hostname)
-		}
-		arrToDelete := appNodes[instance.Spec.Replicas:len(appNodes)]
-		glog.V(2).Infof("service %s - node replicas: %d -> %d\n", appName, len(appNodes), instance.Spec.Replicas)
-
-		for _, item := range arrToDelete {
-			glog.V(2).Infof("service: %s - marking for deletion node %s\n", appName, item.Spec.Hostname)
-			item.Spec.DeletionDate = time.Now().String()
-			r.Update(context.TODO(), &item)
-		}
-	}
-
-	if appName == "orchestrator" && (len(appNodes) > instance.Spec.Replicas*3) {
-		err := sortNodesByNumber(appNodes)
-		if err != nil {
-			glog.Warningf("cannot sorting nodes for removal: %s -- skipping\n", err.Error())
-			return reconcile.Result{}, err
-		}
-		glog.V(2).Infoln("sorted nodes:")
-		for idx, item := range appNodes {
-			glog.V(2).Infof("[%d] %s\n", idx, item.Spec.Hostname)
-		}
-		arrToDelete := appNodes[instance.Spec.Replicas:len(appNodes)]
-		glog.V(2).Infof("service %s - node replicas: %d -> %d\n", appName, len(appNodes), instance.Spec.Replicas)
-		for _, item := range arrToDelete {
-			glog.V(2).Infof("service: %s - marking for deletion node %s\n", appName, item.Spec.Hostname)
-			item.Spec.DeletionDate = time.Now().String()
-			r.Update(context.TODO(), &item)
-		}
-	}
-
 	return reconcile.Result{}, nil
-}
-
-func sortNodesByNumber(nodes []corev1beta1.Node) error {
-	// TODO: improve this
-	var globalErr error
-	re := regexp.MustCompile("[0-9]+")
-	sort.Slice(nodes, func(i, j int) bool {
-		if globalErr != nil {
-			return false
-		}
-		itm1, err := strconv.Atoi(re.FindAllString(nodes[i].Spec.Hostname, -1)[0])
-		if err != nil {
-			globalErr = err
-		}
-		itm2, err := strconv.Atoi(re.FindAllString(nodes[j].Spec.Hostname, -1)[0])
-		if err != nil {
-			globalErr = err
-		}
-		return itm1 < itm2
-	})
-	return globalErr
 }
 
 func deployAction(actualReplicas, nextReplicas int, actualVersion, nextVersion, actualFlavor, nextFlavor string, actualEnv, nextEnv []corev1.EnvVar) string {
