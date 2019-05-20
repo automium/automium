@@ -6,6 +6,30 @@ metadata:
     controller-tools.k8s.io: "1.0"
   name: nodes.core.automium.io
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .spec.hostname
+    description: the node hostname
+    name: Hostname
+    type: string
+  - JSONPath: .status.nodeProperties.id
+    description: the node ID on Consul
+    name: Consul-ID
+    type: string
+  - JSONPath: .status.nodeProperties.address
+    description: the node private IP
+    name: Internal-IP
+    type: string
+  - JSONPath: .status.nodeProperties.publicAddress
+    description: the node public IP
+    name: External-IP
+    type: string
+  - JSONPath: .status.nodeProperties.image
+    description: the image deployed on node
+    name: OS-Image
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   group: core.automium.io
   names:
     kind: Node
