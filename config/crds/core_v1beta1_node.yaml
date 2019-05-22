@@ -12,7 +12,7 @@ spec:
     name: Hostname
     type: string
   - JSONPath: .status.nodeProperties.id
-    description: the node ID on Consul
+    description: the Consul node ID
     name: Consul-ID
     type: string
   - JSONPath: .status.nodeProperties.address
