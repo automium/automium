@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -95,7 +96,7 @@ type ReconcileService struct {
 // Reconcile reads that state of the cluster for a Service object and makes changes based on the state read
 // and what is in the Service.Spec
 // Automatically generate RBAC rules
-// +kubebuilder:rbac:groups=core.automium.io,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.automium.io,resources=services;services/status,verbs=get;list;watch;create;update;patch;delete
 func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	// Fetch the Service instance
 	instance := &corev1beta1.Service{}
@@ -243,7 +244,22 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 			return reconcile.Result{}, err
 		}
 	}
-	return reconcile.Result{}, nil
+
+	// Get the status from the module
+	instance.Status.Phase = found.Status.Phase
+	instance.Status.ModuleRef = found.Name
+	err = r.Status().Update(context.Background(), instance)
+	if err != nil {
+		glog.Errorf("cannot update service status: %s", err.Error())
+		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	if found.Status.Phase == corev1beta1.StatusPhasePending || found.Status.Phase == corev1beta1.StatusPhaseRunning {
+		glog.V(2).Infof("service module %s is in Pending or Running -- reschedule update in 15s.\n", instance.Name)
+		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
+	}
+
+	return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
 func deployAction(actualReplicas, nextReplicas int, actualVersion, nextVersion, actualFlavor, nextFlavor string, actualEnv, nextEnv []corev1.EnvVar) string {

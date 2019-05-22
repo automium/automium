@@ -6,6 +6,34 @@ metadata:
     controller-tools.k8s.io: "1.0"
   name: services.core.automium.io
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .metadata.labels['app']
+    description: the application
+    name: Application
+    type: string
+  - JSONPath: .spec.version
+    description: the application version
+    name: Version
+    type: string
+  - JSONPath: .spec.replicas
+    description: the application replicas
+    name: Replicas
+    type: string
+  - JSONPath: .spec.flavor
+    description: the child module.core.automium.io
+    name: Flavor
+    type: string
+  - JSONPath: .status.moduleRef
+    description: the child module.core.automium.io
+    name: Module
+    type: string
+  - JSONPath: .status.phase
+    description: the execution phase
+    name: Status
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   group: core.automium.io
   names:
     kind: Service
@@ -15,6 +43,7 @@ spec:
     scale:
       specReplicasPath: .spec.replicas
       statusReplicasPath: .status.replicas
+    status: {}
   validation:
     openAPIV3Schema:
       properties:
@@ -54,6 +83,14 @@ spec:
           - version
           type: object
         status:
+          properties:
+            moduleRef:
+              type: string
+            phase:
+              type: string
+          required:
+          - phase
+          - moduleRef
           type: object
   version: v1beta1
 status:

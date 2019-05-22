@@ -39,6 +39,13 @@ rules:
   - patch
   - delete
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
   - core.automium.io
   resources:
   - nodes
@@ -55,6 +62,7 @@ rules:
   - core.automium.io
   resources:
   - services
+  - services/status
   verbs:
   - get
   - list
