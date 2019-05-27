@@ -8,27 +8,27 @@ metadata:
 spec:
   additionalPrinterColumns:
   - JSONPath: .metadata.labels['app']
-    description: the application
+    description: The desired application
     name: Application
     type: string
   - JSONPath: .spec.version
-    description: the application version
+    description: The application version
     name: Version
     type: string
   - JSONPath: .spec.replicas
-    description: the application replicas
+    description: The application replicas
     name: Replicas
     type: string
   - JSONPath: .spec.flavor
-    description: the child module.core.automium.io
+    description: The instance flavor
     name: Flavor
     type: string
   - JSONPath: .status.moduleRef
-    description: the child module.core.automium.io
+    description: module.core.automium.io reference
     name: Module
     type: string
   - JSONPath: .status.phase
-    description: the execution phase
+    description: The execution phase
     name: Status
     type: string
   - JSONPath: .metadata.creationTimestamp
