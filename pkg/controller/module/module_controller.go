@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/client-go/tools/record"
+
 	goerrors "errors"
 
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
@@ -55,7 +57,7 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileModule{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	return &ReconcileModule{Client: mgr.GetClient(), scheme: mgr.GetScheme(), recorder: mgr.GetRecorder("module-controller")}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -91,7 +93,8 @@ var _ reconcile.Reconciler = &ReconcileModule{}
 // ReconcileModule reconciles a Module object
 type ReconcileModule struct {
 	client.Client
-	scheme *runtime.Scheme
+	scheme   *runtime.Scheme
+	recorder record.EventRecorder
 }
 
 // Reconcile reads that state of the cluster for a Module object and makes changes based on the state read
@@ -100,6 +103,7 @@ type ReconcileModule struct {
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=core.automium.io,resources=modules;modules/status,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	// Fetch the Module instance
 	instance := &corev1beta1.Module{}
@@ -134,6 +138,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		jobCommand = append(jobCommand, "./remove")
 	default:
 		glog.Errorf("unknown action for module %s: %s", instance.Name, instance.Spec.Action)
+		r.recorder.Eventf(instance, "Warning", "InvalidData", "unknown action specified: %s", instance.Spec.Action)
 		return reconcile.Result{}, fmt.Errorf("unknown action for module %s: %s", instance.Name, instance.Spec.Action)
 	}
 
@@ -206,6 +211,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 			glog.V(5).Infof("cannot create job: %s\n", err.Error())
 			return reconcile.Result{}, err
 		}
+		r.recorder.Event(instance, "Normal", "Created", "Module created")
 	} else if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -223,6 +229,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		// Check if the job is still running
 		if found.Status.Active >= 1 {
 			glog.V(2).Infof("waiting for operate on job %s: it still has running pods\n", fmt.Sprintf("%s-job", instance.Name))
+			r.recorder.Event(instance, "Warning", "StillRunning", "Module has still running pods")
 			return reconcile.Result{RequeueAfter: 20 * time.Second}, nil
 		}
 
@@ -232,12 +239,14 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		err = r.List(context.TODO(), &client.ListOptions{Namespace: deploy.Namespace}, jobPodList)
 		if err != nil {
 			glog.Warningf("cannot list pods: %s -- skipping job pods cleanup\n", err.Error())
+			r.recorder.Eventf(instance, "Warning", "PodListFailed", "Failed to list module pods: %s -- skipping cleanup", err.Error())
 		} else {
 			for _, pod := range jobPodList.Items {
 				if strings.HasPrefix(pod.Name, fmt.Sprintf("%s-job-", instance.Name)) {
 					err = r.Delete(context.TODO(), &pod)
 					if err != nil {
 						glog.Warningf("cannot delete pod %s for job %s: %s\n", pod.Name, fmt.Sprintf("%s-job-", instance.Name), err.Error())
+						r.recorder.Eventf(instance, "Warning", "PodCleanupFailed", "Failed to delete module pod %s: %s -- skipping cleanup", pod.Name, err.Error())
 					}
 				}
 			}
@@ -253,9 +262,11 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		err = r.updateModuleStatus(instance, corev1beta1.StatusPhasePending)
 		if err != nil {
 			glog.Errorf("cannot update status for module %s: %s\n", instance.Name, err.Error())
+			r.recorder.Eventf(instance, "Warning", "UpdateFailed", "Failed to update module status: %s", err.Error())
 			return reconcile.Result{}, err
 		}
 
+		r.recorder.Eventf(instance, "Normal", "Updated", "Module updated")
 		// Requeue module update
 		return reconcile.Result{Requeue: true}, nil
 	}
@@ -263,6 +274,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	err = r.manageNodesForModule(instance)
 	if err != nil {
 		glog.Errorf("cannot manage node for module %s: %s -- retrying in 5s.\n", instance.Name, err.Error())
+		r.recorder.Eventf(instance, "Warning", "NodeManagementFailed", "Failed to manage nodes: %s", err.Error())
 		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
@@ -270,6 +282,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	status, err := r.retrieveJobStatus(found)
 	if err != nil {
 		glog.Errorf("cannot get status for job %s: %s\n", found.Name, err.Error())
+		r.recorder.Eventf(instance, "Warning", "RetrieveJobStatusFailed", "Failed to retrieve job status: %s", err.Error())
 		return reconcile.Result{}, err
 	}
 
@@ -284,6 +297,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	err = r.updateModuleStatus(instance, status)
 	if err != nil {
 		glog.Errorf("cannot update module %s status: %s\n", instance.Name, err.Error())
+		r.recorder.Eventf(instance, "Warning", "ModuleStatusUpdateFailed", "Failed to update module status: %s", err.Error())
 		return reconcile.Result{}, err
 	}
 	glog.V(5).Infof("Module %s updated\n", instance.Name)
@@ -292,6 +306,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
+	r.recorder.Eventf(instance, "Normal", "Completed", "Module execution completed")
 	glog.V(5).Infof("ops on module %s completed.\n", instance.Name)
 	return reconcile.Result{}, nil
 }

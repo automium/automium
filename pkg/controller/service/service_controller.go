@@ -24,6 +24,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
 	"github.com/golang/glog"
@@ -54,7 +55,7 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileService{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	return &ReconcileService{Client: mgr.GetClient(), scheme: mgr.GetScheme(), recorder: mgr.GetRecorder("service-controller")}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -90,13 +91,15 @@ var _ reconcile.Reconciler = &ReconcileService{}
 // ReconcileService reconciles a Service object
 type ReconcileService struct {
 	client.Client
-	scheme *runtime.Scheme
+	scheme   *runtime.Scheme
+	recorder record.EventRecorder
 }
 
 // Reconcile reads that state of the cluster for a Service object and makes changes based on the state read
 // and what is in the Service.Spec
 // Automatically generate RBAC rules
 // +kubebuilder:rbac:groups=core.automium.io,resources=services;services/status,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	// Fetch the Service instance
 	instance := &corev1beta1.Service{}
@@ -228,6 +231,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 			glog.Infof("cannot create module %s: %s\n", deploy.Name, err.Error())
 			return reconcile.Result{}, err
 		}
+		r.recorder.Event(instance, "Normal", "Created", "Service created")
 		return reconcile.Result{}, nil
 	} else if err != nil {
 		glog.Infof("cannot get module %s: %s\n", deploy.Name, err.Error())
@@ -240,6 +244,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		found.Spec = deploy.Spec
 		glog.V(2).Infof("updating module %s/%s -- action:%s\n", deploy.Namespace, deploy.Name, deploy.Spec.Action)
 		err = r.Update(context.TODO(), found)
+		r.recorder.Event(instance, "Normal", "Updated", "Service updated")
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -251,6 +256,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	err = r.Status().Update(context.Background(), instance)
 	if err != nil {
 		glog.Errorf("cannot update service status: %s", err.Error())
+		r.recorder.Eventf(instance, "Warning", "StatusUpdateFailed", "Cannot update service status: %s", err.Error())
 		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
