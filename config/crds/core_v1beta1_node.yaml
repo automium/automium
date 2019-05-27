@@ -11,10 +11,6 @@ spec:
     description: the node hostname
     name: Hostname
     type: string
-  - JSONPath: .status.nodeProperties.id
-    description: the Consul node ID
-    name: Consul-ID
-    type: string
   - JSONPath: .status.nodeProperties.address
     description: the node private IP
     name: Internal-IP
@@ -26,6 +22,10 @@ spec:
   - JSONPath: .status.nodeProperties.image
     description: the image deployed on node
     name: OS-Image
+    type: string
+  - JSONPath: .metadata.annotations['service\.automium\.io/name']
+    description: Service which the node belongs to
+    name: Service
     type: string
   - JSONPath: .metadata.creationTimestamp
     name: Age
