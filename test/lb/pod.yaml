@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lb
+  labels:
+    app: haproxy
+spec:
+  containers:
+    - name: lb-container
+      image: haproxy
+      volumeMounts:
+      - name: lb-config-volume
+        mountPath: /usr/local/etc/haproxy/
+  volumes:
+    - name: lb-config-volume
+      configMap:
+        name: lb-config

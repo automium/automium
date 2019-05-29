@@ -1,0 +1,24 @@
+global:
+  enabled: true
+  domain: consul
+  datacenter: automium
+
+server:
+  enabled: true
+  replicas: 1
+  bootstrapExpect: 1
+  storage: 10Mi
+  storageClass: consul-volume
+
+client:
+  enabled: true
+
+dns:
+  enabled: true
+
+ui:
+  enabled: true
+  service:
+    enabled: true
+    type: NodePort
+    

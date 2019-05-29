@@ -1,0 +1,20 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: nginx
+  annotations:
+    ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  rules:
+  - host: consul.automium.local
+    http:
+      paths:
+      - backend:
+          serviceName: consul-consul-server
+          servicePort: 8500
+  - host: lb.automium.local
+    http:
+      paths:
+      - backend:
+          serviceName: lb-service
+          servicePort: 80

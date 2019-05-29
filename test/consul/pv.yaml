@@ -1,0 +1,14 @@
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: consul-volume
+  labels:
+    type: local
+spec:
+  capacity:
+    storage: 10Mi
+  storageClassName: consul-volume
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/tmp/consul"
