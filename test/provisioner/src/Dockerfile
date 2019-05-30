@@ -10,7 +10,7 @@ RUN apk add --update ca-certificates \
  && rm /var/cache/apk/*
 
 WORKDIR /root
-ADD deploy deploy
+COPY . .
 RUN chmod +x deploy
 
 CMD "run deploy, upgrade or delete"

@@ -77,7 +77,7 @@ From the root of the repo, run the following commands to deploy the custom CRDs 
 
 ```
 make install
-CONSUL_ADDRESS=consul-consul-server.default.svc.cluster.local:8500 make run
+CONSUL_ADDRESS=consul.automium.local:8081 make run
 ```
 
 Automium is now up and running. Let's move to another terminal to interact with it.  
