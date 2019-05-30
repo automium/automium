@@ -26,7 +26,7 @@ export KUBECONFIG="$(k3d get-kubeconfig --name='k3s-default')"
 kubectl get nodes
 ```
 
-We use [Helm](https://helm.sh/) to setup a Consul server in k3s. Follow this [tutorial](https://helm.sh/docs/using_helm/#installing-helm) to install the client and the following commands to complete the setup (be sure to move to the /test folder of the repo!):  
+We use [Helm](https://helm.sh/) to setup a Consul server in k3s. Follow this [tutorial](https://helm.sh/docs/using_helm/#installing-helm) to install the client and then run the following commands to complete the setup (be sure to move to the /test folder of the repo!):  
 
 ```  
 kubectl apply -f rbac-config.yaml
@@ -37,7 +37,7 @@ Once helm is ready, we can install Consul using the [official chart](https://git
 
 `helm install --name consul -f consul/values.yaml https://github.com/hashicorp/consul-helm/archive/v0.8.1.tar.gz`
 
-Consul pod remains pending until we define a local volume to store data with the following commands:
+Consul pod remains pending until we define a local volume to store data, with the following commands:
 
 ```
 kubectl apply -f consul/pv.yaml
@@ -48,7 +48,7 @@ In order to view the Consul dashboard, and later to publish a load balancer for 
 
 `kubectl apply -f ingress.yaml`
 
-The ingress define 2 different domains, you have to map in your local etc/hosts:
+The ingress matches 2 different domains. You have to map them in your local _etc/hosts_ file, adding this two lines:
 
 ```
 127.0.0.1    consul.automium.local
@@ -69,28 +69,43 @@ Try to open the url http://lb.automium.local:8081/stats to check the HAProxy sta
 ### Run Automium
 
 At this point, we have all the required components for Automium Operator.
-Before deploying the CRDs and run the manager, you need to create a configmap with the configuration:
+Before deploying the CRDs and run the manager, you need to create a configmap with the default configuration:
 
 `kubectl create configmap provisioner-config`
 
-From the root of the repo, run the following commands to deploy the custom CRDs in the k3s cluster and run the Automium controllers locally:
+From the root of the repo, run the following commands to deploy the custom CRDs in the k3s cluster and run the Automium controllers locally, pointing the running consul API:
 
 ```
 make install
-make run
+CONSUL_ADDRESS=consul-consul-server.default.svc.cluster.local:8500 make run
 ```
 
-Automium is now up and running. Let's move to another terminal to interact with it.
-For example, you can create an example service applying this specs with kubectl:
+Automium is now up and running. Let's move to another terminal to interact with it.  
+
+### Try the example provisioner
+We are going to run the example service, that's a custom application built for demo and test purposes. Look at the project [here](todo_add_link) if you want to understand the application or contribute to improve it!
+
+Automium Operator runs the example service trough a [specific provisioner](https://github.com/automium/automium/tree/master/test/provisioner) that knows how to deploy, scale, upgrade and delete the application.
+
+Before run the service, we need to configure the provisioner adding the role to manage  pods in the default namespace. This can be done applying these 2 yaml files from the root folder:
+
+```
+kubectl apply -f test/provisioner/role.yaml
+kubectl apply -f test/provisioner/rolebinding.yaml
+```
+
+It's time to create an example service applying this specs with kubectl:
 
 `kubectl apply -f config/samples/core_v1beta1_example-service.yaml`
 
-The [service controller]() will be triggered to launch the example provisioner. Running `kubectl get service.core` you will see this output:
+The [service controller](https://github.com/automium/automium/blob/master/pkg/controller/service/service_controller.go) will be triggered to launch the example provisioner. Running `kubectl get service.core` you should see this output:
 
 ```
 NAME               APPLICATION   VERSION   REPLICAS   FLAVOR          MODULE                    STATUS    AGE
 automium-example   example       1.0.0     1          e3standard.x1   automium-example-module   Running   2s
 ```
+
+To double-check the example service is up and running, you can open the url http://lb.automium.local:8081 or check the load balancer stats page.
 
 ### Cleanup
 

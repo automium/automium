@@ -1,0 +1,2 @@
+#!/bin/sh
+kubectl run --image=fminzoni/cloud-native-app --replicas=$QUANTITY example-app
