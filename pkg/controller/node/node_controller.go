@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
@@ -116,9 +117,15 @@ func (r *ReconcileNode) Reconcile(request reconcile.Request) (reconcile.Result, 
 		return refreshReconcilier, err
 	}
 
+	// Retrieve the Consul address from the environment or use default value
+	consulAddress := os.Getenv("CONSUL_ADDRESS")
+	if consulAddress == "" {
+		consulAddress = "consul.service.automium.consul:8500"
+	}
+
 	// Create a Consul client
 	consulClient, err := consulapi.NewClient(&consulapi.Config{
-		Address:    "consul.service.automium.consul:8500",
+		Address:    consulAddress,
 		Datacenter: "automium",
 	})
 

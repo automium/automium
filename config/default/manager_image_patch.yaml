@@ -14,3 +14,5 @@ spec:
         env:
         - name: PLATFORM
           value: "openstack"
+        - name: CONSUL_ADDRESS
+          value: "consul.service.automium.consul:8500"
