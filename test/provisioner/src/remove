@@ -1,0 +1,2 @@
+#!/bin/sh
+kubectl scale statefulset example --replicas=$QUANTITY

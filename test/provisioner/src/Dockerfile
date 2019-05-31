@@ -11,6 +11,6 @@ RUN apk add --update ca-certificates \
 
 WORKDIR /root
 COPY . .
-RUN chmod +x deploy
+RUN chmod +x deploy upgrade remove
 
 CMD "run deploy, upgrade or delete"
