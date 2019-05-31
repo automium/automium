@@ -16,3 +16,8 @@ spec:
       - name: example
         image: automium/reactor
         imagePullPolicy: "Always"
+        lifecycle:
+          preStop:
+            exec:
+              # gracefully terminate the agent
+              command: ["consul", "leave"]
