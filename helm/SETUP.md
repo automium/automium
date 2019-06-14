@@ -37,7 +37,9 @@ helm init --upgrade --service-account tiller
 
 ### Consul
 
-Once helm is ready, you can install Consul using the [official chart](https://github.com/hashicorp/consul-helm). Since the project doesn't use a real Helm repository, you need to install it from GitHub, using some custom values:
+Once helm is ready, you can install Consul using the [official chart](https://github.com/hashicorp/consul-helm). Since the project doesn't use a real Helm repository, you need to install it from GitHub, using some custom values.
+
+Before proceding, you have to choose to follow the next steps to go straight with the default setup of Consul or add a bit of complexity to secure Consul with ACLs. For the latter, follow this [guide](https://github.com/automium/automium/tree/master/helm/SETUP_ACL.md).
 
 `helm install --name consul -f consul-values.yaml https://github.com/hashicorp/consul-helm/archive/v0.8.1.tar.gz`
 
