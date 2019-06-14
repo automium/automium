@@ -48,7 +48,16 @@ spec:
           value: TOKEN-VALUE
 ```
 
-### Next
+### Start using Automium
 
 Follow the main guide [here](https://github.com/automium/automium/blob/master/helm/SETUP.md#run-automium) to run and test Automium.
 Just remember to use the acl version of the example service!
+
+### Vault and Terraform integration
+
+Since we have Consul with ACL enabled, a key scenario for the playground involve other two Hashicorp technologies: Vault and Terraform.  
+The integration with Vault provides these capabilities:   
+* manage Consul tokens with Vault  
+* store Terraform state in the Consul KV in a secure way  
+
+If you are interested in this scenario, look at this [specific guide](https://github.com/automium/automium/blob/master/helm/SETUP_VAULT.md).
