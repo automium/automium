@@ -24,3 +24,6 @@ zz_generated.*
 *.swo
 *~
 .DS_Store
+
+# terraform files
+.terraform

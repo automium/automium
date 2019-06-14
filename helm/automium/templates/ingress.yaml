@@ -19,4 +19,10 @@ spec:
       - backend:
           serviceName: lb-service
           servicePort: 80
+  - host: {{ .Values.ingress.vaultHost }}
+    http:
+      paths:
+      - backend:
+          serviceName: vault-vault
+          servicePort: 8200
 {{- end }}

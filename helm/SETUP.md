@@ -62,6 +62,7 @@ In order to view the provided dashboards you have to map the urls in your local 
 ```
 127.0.0.1    consul.automium.local
 127.0.0.1    lb.automium.local
+127.0.0.1    vault.automium.local
 ```
 
 Open the url http://consul.automium.local:8081 to check Consul dashboard is working.
