@@ -1,20 +1,22 @@
+{{- if .Values.ingress.enabled -}}
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
-  name: nginx
+  name: automium
   annotations:
     ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   rules:
-  - host: consul.automium.local
+  - host: {{ .Values.ingress.consulHost }}
     http:
       paths:
       - backend:
           serviceName: consul-consul-server
           servicePort: 8500
-  - host: lb.automium.local
+  - host: {{ .Values.ingress.lbHost }}
     http:
       paths:
       - backend:
           serviceName: lb-service
           servicePort: 80
+{{- end }}

@@ -1,0 +1,4 @@
+ingress:
+  enabled: true
+  consulHost: consul.automium.local
+  lbHost: lb.automium.local

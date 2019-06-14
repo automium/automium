@@ -3,7 +3,7 @@ kind: Pod
 metadata:
   name: lb
   labels:
-    app: haproxy
+    app: haproxy 
 spec:
   containers:
     - name: lb-container
