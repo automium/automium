@@ -1,4 +1,4 @@
-# Setting up Automium 
+# Setting up Automium Playground
 
 ## Components
 
@@ -13,7 +13,7 @@ Our “secret recipe” to setup a service. It is defined as a collection of Ter
 
 ## Standalone Installation
 
-To setup the required components in a test environment we can use [k3s](https://github.com/rancher/k3s) instead of a full Kubernetes cluster, a single Consul server running in k3s and an example provisioner.
+To setup the required components in a test environment we can use [k3s](https://github.com/rancher/k3s) instead of a full Kubernetes cluster, a single Consul server running in k3s and the example provisioner.
 
 ### Kubernetes
 
@@ -37,11 +37,11 @@ helm init --upgrade --service-account tiller
 
 ### Consul
 
-Once helm is ready, we can install Consul using the [official chart](https://github.com/hashicorp/consul-helm). Since the project doesn't use a real Helm repository, we need to install it from GitHub, using our custom values:
+Once helm is ready, you can install Consul using the [official chart](https://github.com/hashicorp/consul-helm). Since the project doesn't use a real Helm repository, you need to install it from GitHub, using some custom values:
 
 `helm install --name consul -f consul-values.yaml https://github.com/hashicorp/consul-helm/archive/v0.8.1.tar.gz`
 
-Consul pod remains pending until we define a local volume to store data, with the following commands:
+Consul pod remains pending until you define a local volume to store data, with the following commands:
 
 ```
 kubectl apply -f consul/
