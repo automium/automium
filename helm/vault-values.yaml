@@ -1,0 +1,9 @@
+vault:
+  dev: false
+  config:
+    ui: true
+    storage:
+      consul:
+        address: "consul-consul-server.default.svc.cluster.local:8500"
+        path: "vault"
+        token: CONSUL-TOKEN-HERE
