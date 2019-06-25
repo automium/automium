@@ -348,7 +348,7 @@ func (r *ReconcileModule) updateModuleStatus(module *corev1beta1.Module, action,
 	module.Status.Phase = phase
 	module.Status.Replicas = module.Spec.Replicas
 
-	cur, upd, err := r.getUpdatedNodes(module.Namespace, module.ObjectMeta.Annotations["service.automium.io/name"], action, module.Spec.Image)
+	cur, upd, err := r.getUpdatedNodes(module.Namespace, module.ObjectMeta.Annotations["service.automium.io/name"], action, module.Spec.Image, module.Spec.Flavor)
 	if err != nil {
 		return err
 	}
@@ -386,7 +386,7 @@ func (r *ReconcileModule) retrieveJobStatus(job *batchv1.Job) (string, error) {
 	return "", goerrors.New(fmt.Sprintf("cannot detect job %s status", job.Name))
 }
 
-func (r *ReconcileModule) getUpdatedNodes(namespace, serviceName, action, newImageVersion string) (int, int, error) {
+func (r *ReconcileModule) getUpdatedNodes(namespace, serviceName, action, newImageVersion, newFlavor string) (int, int, error) {
 	var currentReplicas int
 	var updatedReplicas int
 
@@ -403,7 +403,7 @@ func (r *ReconcileModule) getUpdatedNodes(namespace, serviceName, action, newIma
 	for _, node := range nodesList.Items {
 		if node.ObjectMeta.Annotations["service.automium.io/name"] == serviceName {
 			if nodeIsHealthy(node) {
-				if node.Status.NodeProperties.Image == newImageVersion {
+				if node.Status.NodeProperties.Image == newImageVersion && node.Status.NodeProperties.Flavor == newFlavor {
 					glog.V(5).Infof("getUpdatedNodes: node: %s - is an updated replica\n", node.Name)
 					updatedReplicas++
 					if action == "Deploy" {
