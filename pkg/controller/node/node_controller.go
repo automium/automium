@@ -193,6 +193,7 @@ func (r *ReconcileNode) Reconcile(request reconcile.Request) (reconcile.Result, 
 		Node:          nodeInfo.Node.Node,
 		Address:       nodeInfo.Node.Address,
 		PublicAddress: nodeFIP,
+		Flavor:        nodeInfo.Node.Meta["flavor"],
 		Image:         nodeInfo.Node.Meta["image"],
 	}
 

@@ -39,6 +39,7 @@ type NodePropertiesStatusSpec struct {
 	Node          string `json:"node"`
 	Address       string `json:"address"`
 	PublicAddress string `json:"publicAddress"`
+	Flavor        string `json:"flavor"`
 	Image         string `json:"image"`
 }
 
