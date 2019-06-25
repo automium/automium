@@ -30,6 +30,7 @@ import (
 
 	goerrors "errors"
 
+	"github.com/automium/automium/pkg/apis/core/v1beta1"
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
 	"github.com/golang/glog"
 	batchv1 "k8s.io/api/batch/v1"
@@ -118,6 +119,18 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{}, err
 	}
 
+	// Before doing anything, let's be sure there is no job running or exists for the module
+	found := &batchv1.Job{}
+	foundJobErr := r.Get(context.TODO(), types.NamespacedName{Name: fmt.Sprintf("%s-job", instance.Name), Namespace: instance.Namespace}, found)
+	if foundJobErr != nil && !errors.IsNotFound(foundJobErr) {
+		// Check if the found job is active
+		if found.Status.Active >= 1 {
+			glog.V(2).Infof("waiting for operate on job %s: it still has a job running\n", fmt.Sprintf("%s-job", instance.Name))
+			r.recorder.Event(instance, "Warning", "JobStillRunning", "Module has still running jobs")
+			return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+	}
+
 	// Define the reference to the provisioning configuration
 	provisioner := corev1.EnvFromSource{
 		ConfigMapRef: &corev1.ConfigMapEnvSource{
@@ -125,23 +138,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		},
 	}
 
-	// Define the command to be executed by the Job
-	jobCommand := []string{}
-	switch instance.Spec.Action {
-	case "Deploy":
-		jobCommand = append(jobCommand, "./deploy")
-	case "Upgrade":
-		jobCommand = append(jobCommand, "./upgrade")
-	case "DeployAndUpgrade":
-		jobCommand = append(jobCommand, "/bin/sh", "-c", "./deploy && ./upgrade")
-	case "Destroy":
-		jobCommand = append(jobCommand, "./remove")
-	default:
-		glog.Errorf("unknown action for module %s: %s", instance.Name, instance.Spec.Action)
-		r.recorder.Eventf(instance, "Warning", "InvalidData", "unknown action specified: %s", instance.Spec.Action)
-		return reconcile.Result{}, fmt.Errorf("unknown action for module %s: %s", instance.Name, instance.Spec.Action)
-	}
-
+	// Add extra variables for the Job
 	batchEnvVars := append(instance.Spec.Env,
 		corev1.EnvVar{
 			Name:  "FLAVOR",
@@ -156,6 +153,30 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 			Value: instance.Spec.Image,
 		},
 	)
+
+	action, err := r.evalutateModuleAction(instance)
+	if err != nil {
+		glog.V(2).Infof("cannot evalutate action for module %s: %s\n", instance.Name, err.Error())
+		r.recorder.Eventf(instance, "Warning", "ModuleEvaluationFailed", "Module action evaluation failed: %s", err.Error())
+		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	// Define the command to be executed by the Job
+	jobCommand := []string{}
+	switch action {
+	case "Deploy":
+		jobCommand = append(jobCommand, "./deploy")
+	case "Upgrade":
+		jobCommand = append(jobCommand, "./upgrade")
+	case "DeployAndUpgrade":
+		jobCommand = append(jobCommand, "/bin/sh", "-c", "./deploy && ./upgrade")
+	case "Destroy":
+		jobCommand = append(jobCommand, "./remove")
+	default:
+		glog.Errorf("unknown action for module %s: %s", instance.Name, action)
+		r.recorder.Eventf(instance, "Warning", "InvalidData", "unknown action specified: %s", action)
+		return reconcile.Result{}, fmt.Errorf("unknown action for module %s: %s", instance.Name, action)
+	}
 
 	var retryCount int32 = 1
 	var ndots = "1"
@@ -202,9 +223,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	}
 
 	// Check if the Job already exists
-	found := &batchv1.Job{}
-	err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
+	if errors.IsNotFound(foundJobErr) {
 		glog.Infof("creating Job %s/%s\n", deploy.Namespace, deploy.Name)
 		err = r.Create(context.TODO(), deploy)
 		if err != nil {
@@ -225,13 +244,6 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 
 	// Check if the job needs to be recreated by comparing the new env and the found job env
 	if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Env, found.Spec.Template.Spec.Containers[0].Env) {
-
-		// Check if the job is still running
-		if found.Status.Active >= 1 {
-			glog.V(2).Infof("waiting for operate on job %s: it still has running pods\n", fmt.Sprintf("%s-job", instance.Name))
-			r.recorder.Event(instance, "Warning", "StillRunning", "Module has still running pods")
-			return reconcile.Result{RequeueAfter: 20 * time.Second}, nil
-		}
 
 		// Cleanup Job pods
 		glog.Infof("deleting old Job %s/%s and its pods\n", deploy.Namespace, deploy.Name)
@@ -259,7 +271,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		}
 
 		// Update status
-		err = r.updateModuleStatus(instance, corev1beta1.StatusPhasePending)
+		err = r.updateModuleStatus(instance, action, corev1beta1.StatusPhasePending)
 		if err != nil {
 			glog.Errorf("cannot update status for module %s: %s\n", instance.Name, err.Error())
 			r.recorder.Eventf(instance, "Warning", "UpdateFailed", "Failed to update module status: %s", err.Error())
@@ -289,12 +301,12 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	// Manage module status
 	glog.V(5).Infof("Updating module %s status...\n", instance.Name)
 
-	// If updated replicas are not equal to the desidered replicas, and the module is completed, return Pending
+	// If updated replicas are not equal to the desired replicas, and the module is completed, return Pending
 	if instance.Status.UpdatedReplicas != instance.Status.Replicas && status == corev1beta1.StatusPhaseCompleted {
 		status = corev1beta1.StatusPhasePending
 	}
 
-	err = r.updateModuleStatus(instance, status)
+	err = r.updateModuleStatus(instance, action, status)
 	if err != nil {
 		glog.Errorf("cannot update module %s status: %s\n", instance.Name, err.Error())
 		r.recorder.Eventf(instance, "Warning", "ModuleStatusUpdateFailed", "Failed to update module status: %s", err.Error())
@@ -332,11 +344,11 @@ func sortNodesByNumber(nodes []corev1beta1.Node) error {
 	return globalErr
 }
 
-func (r *ReconcileModule) updateModuleStatus(module *corev1beta1.Module, phase string) error {
+func (r *ReconcileModule) updateModuleStatus(module *corev1beta1.Module, action, phase string) error {
 	module.Status.Phase = phase
 	module.Status.Replicas = module.Spec.Replicas
 
-	cur, upd, err := r.getUpdatedNodes(module.Namespace, module.ObjectMeta.Annotations["service.automium.io/name"], module.Spec.Action, module.Spec.Image)
+	cur, upd, err := r.getUpdatedNodes(module.Namespace, module.ObjectMeta.Annotations["service.automium.io/name"], action, module.Spec.Image)
 	if err != nil {
 		return err
 	}
@@ -436,20 +448,10 @@ func (r *ReconcileModule) manageNodesForModule(module *corev1beta1.Module) error
 		return goerrors.New("missing application and or service annotations in module, cannot continue")
 	}
 
-	// Retrieve all nodes for this namespace
-	nsNodes := &corev1beta1.NodeList{}
-	err := r.List(context.TODO(), &client.ListOptions{Namespace: module.Namespace}, nsNodes)
+	// Search for existent nodes for service
+	appNodes, err := r.retrieveNodesForService(serviceName, module.Namespace)
 	if err != nil {
 		return err
-	}
-
-	// Search for existent nodes for service
-	appNodes := make([]corev1beta1.Node, 0)
-	for _, node := range nsNodes.Items {
-		if node.ObjectMeta.Annotations["service.automium.io/name"] == serviceName {
-			glog.V(2).Infof("found node %s for app %s\n", node.Spec.Hostname, serviceName)
-			appNodes = append(appNodes, node)
-		}
 	}
 
 	// Add all items or the missing items
@@ -520,4 +522,98 @@ func (r *ReconcileModule) manageNodesForModule(module *corev1beta1.Module) error
 
 	return nil
 
+}
+
+func (r *ReconcileModule) retrieveNodesForService(svcName, namespace string) ([]v1beta1.Node, error) {
+	// Retrieve all nodes for this namespace
+
+	if svcName == "" || namespace == "" {
+		return nil, goerrors.New("cannot retrieve nodes: invalid service and/or namspace")
+	}
+
+	nsNodes := &corev1beta1.NodeList{}
+	err := r.List(context.TODO(), &client.ListOptions{Namespace: namespace}, nsNodes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Search for existent nodes for service
+	appNodes := make([]corev1beta1.Node, 0)
+	for _, node := range nsNodes.Items {
+		if node.ObjectMeta.Annotations["service.automium.io/name"] == svcName {
+			glog.V(2).Infof("found node %s for app %s\n", node.Spec.Hostname, svcName)
+			appNodes = append(appNodes, node)
+		}
+	}
+
+	return appNodes, nil
+}
+
+func (r *ReconcileModule) evalutateModuleAction(module *v1beta1.Module) (string, error) {
+
+	// If the user wants no replicas, destroy everything
+	if module.Spec.Replicas == 0 {
+		return "Destroy", nil
+	}
+
+	// Retrieve current nodes
+	moduleNodes, err := r.retrieveNodesForService(module.ObjectMeta.Annotations["service.automium.io/name"], module.Namespace)
+	if err != nil {
+		return "", err
+	}
+
+	// If there are no nodes, deploy
+	if len(moduleNodes) == 0 {
+		return "Deploy", nil
+	}
+
+	// Check if all nodes are consistent (same image and flavor); if not, force an upgrade
+	if !nodesAreConsistent(moduleNodes) {
+		return "Upgrade", nil
+	}
+
+	// Now we are sure all nodes are the same flavor and image; use the first node found for comparison
+	// If the replicas are different and image/flavor/env are the same, do a deploy
+	if compareNodeFlavor(moduleNodes[0], module.Spec.Flavor) && compareNodeImage(moduleNodes[0], module.Spec.Image) {
+		return "Deploy", nil
+	}
+
+	// At this point, the flavor/image/env are changed and we need to do a service upgrade.
+	// If module replicas are different than the current nodes, we need add (or remove) the nodes to reach the desired replicas before upgrading the service.
+	if module.Spec.Replicas != len(moduleNodes) {
+		return "DeployAndUpgrade", nil
+	}
+
+	return "Upgrade", nil
+}
+
+// Utils
+
+func compareNodeImage(node v1beta1.Node, image string) bool {
+	if node.Status.NodeProperties.Image == image {
+		return true
+	}
+	return false
+}
+
+func compareNodeFlavor(node v1beta1.Node, flavor string) bool {
+	if node.Status.NodeProperties.Flavor == flavor {
+		return true
+	}
+	return false
+}
+
+func nodesAreConsistent(nodes []v1beta1.Node) bool {
+	// Get first node
+	compareNode := nodes[0]
+	for idx, node := range nodes {
+		if idx == 0 {
+			// Useless to compare first node with itself
+			continue
+		}
+		if compareNode.Status.NodeProperties.Flavor != node.Status.NodeProperties.Flavor || compareNode.Status.NodeProperties.Image != node.Status.NodeProperties.Flavor {
+			return false
+		}
+	}
+	return true
 }

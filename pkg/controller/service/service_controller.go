@@ -225,7 +225,6 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 		glog.Infof("creating module %s/%s\n", deploy.Namespace, deploy.Name)
-		deploy.Spec.Action = "Deploy"
 		err = r.Create(context.TODO(), deploy)
 		if err != nil {
 			glog.Infof("cannot create module %s: %s\n", deploy.Name, err.Error())
@@ -240,11 +239,16 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	// Update the found object and write the result back if there are any changes
 	if isModuleDifferent(found, deploy) {
-		deploy.Spec.Action = deployAction(found.Spec.Replicas, deploy.Spec.Replicas, found.Spec.Image, deploy.Spec.Image, found.Spec.Flavor, deploy.Spec.Flavor, found.Spec.Env, deploy.Spec.Env)
 		found.Spec = deploy.Spec
-		glog.V(2).Infof("updating module %s/%s -- action:%s\n", deploy.Namespace, deploy.Name, deploy.Spec.Action)
+		glog.V(2).Infof("updating module %s/%s\n", deploy.Namespace, deploy.Name)
 		err = r.Update(context.TODO(), found)
 		r.recorder.Event(instance, "Normal", "Updated", "Service updated")
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Refresh the instance
+		err := r.Get(context.TODO(), request.NamespacedName, instance)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -253,6 +257,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	// Get the status from the module
 	instance.Status.Phase = found.Status.Phase
 	instance.Status.ModuleRef = found.Name
+
 	err = r.Status().Update(context.Background(), instance)
 	if err != nil {
 		glog.Errorf("cannot update service status: %s", err.Error())
@@ -266,23 +271,6 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
-}
-
-func deployAction(actualReplicas, nextReplicas int, actualVersion, nextVersion, actualFlavor, nextFlavor string, actualEnv, nextEnv []corev1.EnvVar) string {
-	if nextReplicas == 0 {
-		return "Destroy"
-	}
-
-	if actualFlavor == nextFlavor && actualVersion == nextVersion && equalEnvVars(actualEnv, nextEnv) {
-		return "Deploy"
-	}
-
-	if actualReplicas != nextReplicas {
-		return "DeployAndUpgrade"
-	}
-
-	return "Upgrade"
-
 }
 
 func isModuleDifferent(actual, new *corev1beta1.Module) bool {
