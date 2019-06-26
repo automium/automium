@@ -1,3 +1,2 @@
 #!/bin/sh
-kubectl patch statefulset example --type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/image", "value":"automium/reactor:'$IMAGE'"}]'
 kubectl scale statefulset example --replicas=$QUANTITY

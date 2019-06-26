@@ -21,7 +21,11 @@ spec:
     type: string
   - JSONPath: .status.nodeProperties.image
     description: the image deployed on node
-    name: OS-Image
+    name: Image
+    type: string
+  - JSONPath: .status.nodeProperties.flavor
+    description: the flavor deployed on node
+    name: Flavor
     type: string
   - JSONPath: .metadata.annotations['service\.automium\.io/name']
     description: Service which the node belongs to

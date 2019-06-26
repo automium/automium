@@ -197,7 +197,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 					Containers: []corev1.Container{
 						{
 							Name:            "provisioner",
-							Image:           fmt.Sprintf("automium/service-%s:latest", instance.Spec.Source),
+							Image:           fmt.Sprintf("automium/service-%s:%s", instance.Spec.Source, instance.Spec.Image),
 							ImagePullPolicy: "Always",
 							Command:         jobCommand,
 							EnvFrom:         []corev1.EnvFromSource{provisioner},
@@ -562,8 +562,8 @@ func (r *ReconcileModule) evalutateModuleAction(module *v1beta1.Module) (string,
 		return "", err
 	}
 
-	// If there are no nodes, deploy
-	if len(moduleNodes) == 0 {
+	// If there are no nodes or we are scaling down them, deploy
+	if len(moduleNodes) == 0 || module.Spec.Replicas < len(moduleNodes) {
 		return "Deploy", nil
 	}
 
@@ -572,31 +572,25 @@ func (r *ReconcileModule) evalutateModuleAction(module *v1beta1.Module) (string,
 		return "Upgrade", nil
 	}
 
-	// Now we are sure all nodes are the same flavor and image; use the first node found for comparison
-	// If the replicas are different and image/flavor/env are the same, do a deploy
-	if compareNodeFlavor(moduleNodes[0], module.Spec.Flavor) && compareNodeImage(moduleNodes[0], module.Spec.Image) {
-		return "Deploy", nil
+	// Now we are sure all nodes have the same flavor and image; use the first node found for comparison
+	// If desired image and flavor are different from the found ones, do an upgrade
+	if !eqNodeFlavor(moduleNodes[0], module.Spec.Flavor) || !eqNodeImage(moduleNodes[0], module.Spec.Image) {
+		return "Upgrade", nil
 	}
 
-	// At this point, the flavor/image/env are changed and we need to do a service upgrade.
-	// If module replicas are different than the current nodes, we need add (or remove) the nodes to reach the desired replicas before upgrading the service.
-	if module.Spec.Replicas != len(moduleNodes) {
-		return "DeployAndUpgrade", nil
-	}
-
-	return "Upgrade", nil
+	return "Deploy", nil
 }
 
 // Utils
 
-func compareNodeImage(node v1beta1.Node, image string) bool {
+func eqNodeImage(node v1beta1.Node, image string) bool {
 	if node.Status.NodeProperties.Image == image {
 		return true
 	}
 	return false
 }
 
-func compareNodeFlavor(node v1beta1.Node, flavor string) bool {
+func eqNodeFlavor(node v1beta1.Node, flavor string) bool {
 	if node.Status.NodeProperties.Flavor == flavor {
 		return true
 	}
