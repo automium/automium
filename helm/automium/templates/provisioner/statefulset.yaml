@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: example
-        image: automium/reactor
+        image: automium/reactor:example-latest
         imagePullPolicy: "Always"
         lifecycle:
           preStop:

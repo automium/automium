@@ -39,6 +39,7 @@ type NodePropertiesStatusSpec struct {
 	Node          string `json:"node"`
 	Address       string `json:"address"`
 	PublicAddress string `json:"publicAddress"`
+	Flavor        string `json:"flavor"`
 	Image         string `json:"image"`
 }
 
@@ -63,7 +64,8 @@ type NodeStatus struct {
 // +kubebuilder:printcolumn:name="Hostname",type="string",JSONPath=".spec.hostname",description="the node hostname"
 // +kubebuilder:printcolumn:name="Internal-IP",type="string",JSONPath=".status.nodeProperties.address",description="the node private IP"
 // +kubebuilder:printcolumn:name="External-IP",type="string",JSONPath=".status.nodeProperties.publicAddress",description="the node public IP"
-// +kubebuilder:printcolumn:name="OS-Image",type="string",JSONPath=".status.nodeProperties.image",description="the image deployed on node"
+// +kubebuilder:printcolumn:name="Image",type="string",JSONPath=".status.nodeProperties.image",description="the image deployed on node"
+// +kubebuilder:printcolumn:name="Flavor",type="string",JSONPath=".status.nodeProperties.flavor",description="the flavor deployed on node"
 // +kubebuilder:printcolumn:name="Service",type="string",JSONPath=".metadata.annotations['service\.automium\.io/name']",description="Service which the node belongs to"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type Node struct {
