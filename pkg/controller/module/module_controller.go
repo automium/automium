@@ -125,7 +125,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	if foundJobErr != nil && !errors.IsNotFound(foundJobErr) {
 		// Check if the found job is active
 		if found.Status.Active >= 1 {
-			glog.V(2).Infof("waiting for operate on job %s: it still has a job running\n", fmt.Sprintf("%s-job", instance.Name))
+			glog.V(2).Infof("waiting to operate on job %s: it still has a job running\n", fmt.Sprintf("%s-job", instance.Name))
 			r.recorder.Event(instance, "Warning", "JobStillRunning", "Module has still running jobs")
 			return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 		}
@@ -611,7 +611,7 @@ func nodesAreConsistent(nodes []v1beta1.Node) bool {
 			// Useless to compare first node with itself
 			continue
 		}
-		if compareNode.Status.NodeProperties.Flavor != node.Status.NodeProperties.Flavor || compareNode.Status.NodeProperties.Image != node.Status.NodeProperties.Flavor {
+		if compareNode.Status.NodeProperties.Flavor != node.Status.NodeProperties.Flavor || compareNode.Status.NodeProperties.Image != node.Status.NodeProperties.Image {
 			return false
 		}
 	}
