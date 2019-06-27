@@ -119,18 +119,6 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{}, err
 	}
 
-	// Before doing anything, let's be sure there is no job running or exists for the module
-	found := &batchv1.Job{}
-	foundJobErr := r.Get(context.TODO(), types.NamespacedName{Name: fmt.Sprintf("%s-job", instance.Name), Namespace: instance.Namespace}, found)
-	if foundJobErr != nil && !errors.IsNotFound(foundJobErr) {
-		// Check if the found job is active
-		if found.Status.Active >= 1 {
-			glog.V(2).Infof("waiting to operate on job %s: it still has a job running\n", fmt.Sprintf("%s-job", instance.Name))
-			r.recorder.Event(instance, "Warning", "JobStillRunning", "Module has still running jobs")
-			return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-	}
-
 	// Define the reference to the provisioning configuration
 	provisioner := corev1.EnvFromSource{
 		ConfigMapRef: &corev1.ConfigMapEnvSource{
@@ -222,8 +210,9 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{}, err
 	}
 
-	// Check if the Job already exists
-	if errors.IsNotFound(foundJobErr) {
+	found := &batchv1.Job{}
+	foundJobErr := r.Get(context.TODO(), types.NamespacedName{Name: fmt.Sprintf("%s-job", instance.Name), Namespace: instance.Namespace}, found)
+	if foundJobErr != nil && errors.IsNotFound(foundJobErr) {
 		glog.Infof("creating Job %s/%s\n", deploy.Namespace, deploy.Name)
 		err = r.Create(context.TODO(), deploy)
 		if err != nil {
@@ -231,20 +220,23 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 			return reconcile.Result{}, err
 		}
 		r.recorder.Event(instance, "Normal", "Created", "Module created")
-	} else if err != nil {
-		return reconcile.Result{}, err
+	} else {
+		// Let's be sure there is no job running for the module
+		if found.Status.Active >= 1 {
+			glog.V(2).Infof("waiting to operate on job %s: it still has a job running\n", fmt.Sprintf("%s-job", instance.Name))
+			r.recorder.Event(instance, "Warning", "JobStillRunning", "Module has still running jobs")
+			return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 	}
 
-	// The Job already exists.
-	// TODO Wait until the job (pod) is Completed, returning a specific error.
+	// While the pod is starting, skip the reconcile
 	if len(found.Spec.Template.Spec.Containers) == 0 {
 		glog.Infof("no containers found for the job %s/%s\n", deploy.Namespace, deploy.Name)
 		return reconcile.Result{}, nil
 	}
 
-	// Check if the job needs to be recreated by comparing the new env and the found job env
-	if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Env, found.Spec.Template.Spec.Containers[0].Env) {
-
+	// Check if the job needs to be recreated
+	if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Env, found.Spec.Template.Spec.Containers[0].Env) || !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Command, found.Spec.Template.Spec.Containers[0].Command) {
 		// Cleanup Job pods
 		glog.Infof("deleting old Job %s/%s and its pods\n", deploy.Namespace, deploy.Name)
 		jobPodList := &corev1.PodList{}
