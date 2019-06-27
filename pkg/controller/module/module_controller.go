@@ -220,13 +220,6 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 			return reconcile.Result{}, err
 		}
 		r.recorder.Event(instance, "Normal", "Created", "Module created")
-	} else {
-		// Let's be sure there is no job running for the module
-		if found.Status.Active >= 1 {
-			glog.V(2).Infof("waiting to operate on job %s: it still has a job running\n", fmt.Sprintf("%s-job", instance.Name))
-			r.recorder.Event(instance, "Warning", "JobStillRunning", "Module has still running jobs")
-			return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
-		}
 	}
 
 	// While the pod is starting, skip the reconcile
@@ -237,6 +230,13 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 
 	// Check if the job needs to be recreated
 	if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Env, found.Spec.Template.Spec.Containers[0].Env) || !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Command, found.Spec.Template.Spec.Containers[0].Command) {
+		// Let's be sure there is no job running for the module
+		if found.Status.Active >= 1 {
+			glog.V(2).Infof("waiting to operate on job %s: it still has a job running\n", fmt.Sprintf("%s-job", instance.Name))
+			r.recorder.Event(instance, "Warning", "JobStillRunning", "Module has still running jobs")
+			return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		
 		// Cleanup Job pods
 		glog.Infof("deleting old Job %s/%s and its pods\n", deploy.Namespace, deploy.Name)
 		jobPodList := &corev1.PodList{}
