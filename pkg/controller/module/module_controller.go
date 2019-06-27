@@ -555,7 +555,7 @@ func (r *ReconcileModule) evalutateModuleAction(module *v1beta1.Module) (string,
 	}
 
 	// If there are no nodes or we are scaling down them, deploy
-	if len(moduleNodes) == 0 || module.Spec.Replicas < len(moduleNodes) {
+	if getNodesCount(moduleNodes) == 0 || module.Spec.Replicas < getNodesCount(moduleNodes) {
 		return "Deploy", nil
 	}
 
@@ -597,9 +597,22 @@ func nodesAreConsistent(nodes []v1beta1.Node) bool {
 			// Useless to compare first node with itself
 			continue
 		}
+		if node.Status.NodeProperties.ID == "non-existent-machine" {
+			continue
+		}
 		if compareNode.Status.NodeProperties.Flavor != node.Status.NodeProperties.Flavor || compareNode.Status.NodeProperties.Image != node.Status.NodeProperties.Image {
 			return false
 		}
 	}
 	return true
+}
+
+func getNodesCount(nodes []v1beta1.Node) int {
+	count := 0
+	for _, node := range nodes {
+		if node.Status.NodeProperties.ID != "non-existent-machine" {
+			count++
+		}
+	}
+	return count
 }
