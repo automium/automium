@@ -18,12 +18,12 @@ package node
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
+	"github.com/automium/automium/pkg/utils"
 	"github.com/golang/glog"
 	consulapi "github.com/hashicorp/consul/api"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -245,33 +245,11 @@ func (r *ReconcileNode) UpdateNodeStatusIfNeeded(newNode *corev1beta1.Node, name
 	if err != nil {
 		return err
 	}
-	if !CompareStatuses(actualNode.Status, newNode.Status) {
+	if !utils.CompareStatuses(actualNode.Status, newNode.Status) {
 		err = r.Status().Update(context.Background(), newNode)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// CompareStatuses compares two Node status. If there are equals, returns true
-func CompareStatuses(old, new corev1beta1.NodeStatus) bool {
-
-	oldStatusJSON, err := json.Marshal(old)
-	if err != nil {
-		glog.Errorf("cannot marshal old status: %s\n", err.Error())
-		return false
-	}
-
-	newStatusJSON, err := json.Marshal(new)
-	if err != nil {
-		glog.Errorf("cannot marshal new status: %s\n", err.Error())
-		return false
-	}
-
-	if string(oldStatusJSON) == string(newStatusJSON) {
-		return true
-	} else {
-		return false
-	}
 }

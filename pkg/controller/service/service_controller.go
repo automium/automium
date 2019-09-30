@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
+	"github.com/automium/automium/pkg/utils"
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -238,7 +239,7 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	// Update the found object and write the result back if there are any changes
-	if isModuleDifferent(found, deploy) {
+	if utils.IsModuleDifferent(found, deploy) {
 		found.Spec = deploy.Spec
 		glog.V(2).Infof("updating module %s/%s\n", deploy.Namespace, deploy.Name)
 		err = r.Update(context.TODO(), found)
@@ -271,27 +272,4 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
-}
-
-func isModuleDifferent(actual, new *corev1beta1.Module) bool {
-	if actual.Spec.Flavor == new.Spec.Flavor && actual.Spec.Image == new.Spec.Image && actual.Spec.Replicas == new.Spec.Replicas && equalEnvVars(actual.Spec.Env, new.Spec.Env) {
-		return false
-	}
-	return true
-}
-
-func equalEnvVars(oldVars, newVars []corev1.EnvVar) bool {
-	if len(oldVars) != len(newVars) {
-		return false
-	}
-
-	for _, oldVar := range oldVars {
-		for _, newVar := range newVars {
-			if oldVar.Name == newVar.Name && oldVar.Value != newVar.Value {
-				return false
-			}
-		}
-	}
-
-	return true
 }

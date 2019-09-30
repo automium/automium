@@ -20,9 +20,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +29,7 @@ import (
 
 	"github.com/automium/automium/pkg/apis/core/v1beta1"
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
+	"github.com/automium/automium/pkg/utils"
 	"github.com/golang/glog"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -142,7 +140,8 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		},
 	)
 
-	action, err := r.evalutateModuleAction(instance)
+	// Get the correct action for the module
+	action, err := r.chooseModuleAction(instance)
 	if err != nil {
 		glog.V(2).Infof("cannot evalutate action for module %s: %s\n", instance.Name, err.Error())
 		r.recorder.Eventf(instance, "Warning", "ModuleEvaluationFailed", "Module action evaluation failed: %s", err.Error())
@@ -210,6 +209,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{}, err
 	}
 
+	// Try to retrieve an existing Job object
 	found := &batchv1.Job{}
 	foundJobErr := r.Get(context.TODO(), types.NamespacedName{Name: fmt.Sprintf("%s-job", instance.Name), Namespace: instance.Namespace}, found)
 	if foundJobErr != nil && errors.IsNotFound(foundJobErr) {
@@ -236,7 +236,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 			r.recorder.Event(instance, "Warning", "JobStillRunning", "Module has still running jobs")
 			return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 		}
-		
+
 		// Cleanup Job pods
 		glog.Infof("deleting old Job %s/%s and its pods\n", deploy.Namespace, deploy.Name)
 		jobPodList := &corev1.PodList{}
@@ -298,6 +298,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		status = corev1beta1.StatusPhasePending
 	}
 
+	// Update the module status
 	err = r.updateModuleStatus(instance, action, status)
 	if err != nil {
 		glog.Errorf("cannot update module %s status: %s\n", instance.Name, err.Error())
@@ -305,6 +306,8 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		return reconcile.Result{}, err
 	}
 	glog.V(5).Infof("Module %s updated\n", instance.Name)
+
+	// Trigger a requeue if the module is running or pending
 	if status == corev1beta1.StatusPhasePending || status == corev1beta1.StatusPhaseRunning {
 		glog.V(2).Infof("module %s is in Pending or Running -- reschedule update in 15s.\n", instance.Name)
 		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
@@ -313,27 +316,6 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 	r.recorder.Eventf(instance, "Normal", "Completed", "Module execution completed")
 	glog.V(5).Infof("ops on module %s completed.\n", instance.Name)
 	return reconcile.Result{}, nil
-}
-
-func sortNodesByNumber(nodes []corev1beta1.Node) error {
-	// TODO: improve this
-	var globalErr error
-	re := regexp.MustCompile("[0-9]+")
-	sort.Slice(nodes, func(i, j int) bool {
-		if globalErr != nil {
-			return false
-		}
-		itm1, err := strconv.Atoi(re.FindAllString(nodes[i].Spec.Hostname, -1)[0])
-		if err != nil {
-			globalErr = err
-		}
-		itm2, err := strconv.Atoi(re.FindAllString(nodes[j].Spec.Hostname, -1)[0])
-		if err != nil {
-			globalErr = err
-		}
-		return itm1 < itm2
-	})
-	return globalErr
 }
 
 func (r *ReconcileModule) updateModuleStatus(module *corev1beta1.Module, action, phase string) error {
@@ -394,7 +376,7 @@ func (r *ReconcileModule) getUpdatedNodes(namespace, serviceName, action, newIma
 
 	for _, node := range nodesList.Items {
 		if node.ObjectMeta.Annotations["service.automium.io/name"] == serviceName {
-			if nodeIsHealthy(node) {
+			if utils.NodeIsHealthy(node) {
 				if node.Status.NodeProperties.Image == newImageVersion && node.Status.NodeProperties.Flavor == newFlavor {
 					glog.V(5).Infof("getUpdatedNodes: node: %s - is an updated replica\n", node.Name)
 					updatedReplicas++
@@ -413,23 +395,6 @@ func (r *ReconcileModule) getUpdatedNodes(namespace, serviceName, action, newIma
 
 	return currentReplicas, updatedReplicas, nil
 
-}
-
-func nodeIsHealthy(node corev1beta1.Node) bool {
-
-	// Check the node ID
-	if node.Status.NodeProperties.ID == "non-existent-machine" {
-		return false
-	}
-
-	// Check if registered services are not in "passing" status
-	for _, svc := range node.Status.NodeHealthChecks {
-		if svc.Status != "passing" {
-			return false
-		}
-	}
-
-	return true
 }
 
 func (r *ReconcileModule) manageNodesForModule(module *corev1beta1.Module) error {
@@ -492,7 +457,7 @@ func (r *ReconcileModule) manageNodesForModule(module *corev1beta1.Module) error
 		}
 	} else if len(appNodes) > module.Spec.Replicas {
 		// Delete extra nodes
-		err := sortNodesByNumber(appNodes)
+		err := utils.SortNodesByNumber(appNodes)
 		if err != nil {
 			return err
 		}
@@ -541,7 +506,7 @@ func (r *ReconcileModule) retrieveNodesForService(svcName, namespace string) ([]
 	return appNodes, nil
 }
 
-func (r *ReconcileModule) evalutateModuleAction(module *v1beta1.Module) (string, error) {
+func (r *ReconcileModule) chooseModuleAction(module *v1beta1.Module) (string, error) {
 
 	// If the user wants no replicas, destroy everything
 	if module.Spec.Replicas == 0 {
@@ -555,64 +520,20 @@ func (r *ReconcileModule) evalutateModuleAction(module *v1beta1.Module) (string,
 	}
 
 	// If there are no nodes or we are scaling down them, deploy
-	if getNodesCount(moduleNodes) == 0 || module.Spec.Replicas < getNodesCount(moduleNodes) {
+	if utils.GetNodesCount(moduleNodes) == 0 || module.Spec.Replicas < utils.GetNodesCount(moduleNodes) {
 		return "Deploy", nil
 	}
 
 	// Check if all nodes are consistent (same image and flavor); if not, force an upgrade
-	if !nodesAreConsistent(moduleNodes) {
+	if !utils.NodesAreConsistent(moduleNodes) {
 		return "Upgrade", nil
 	}
 
 	// Now we are sure all nodes have the same flavor and image; use the first node found for comparison
 	// If desired image and flavor are different from the found ones, do an upgrade
-	if !eqNodeFlavor(moduleNodes[0], module.Spec.Flavor) || !eqNodeImage(moduleNodes[0], module.Spec.Image) {
+	if !utils.EqNodeFlavor(moduleNodes[0], module.Spec.Flavor) || !utils.EqNodeImage(moduleNodes[0], module.Spec.Image) {
 		return "Upgrade", nil
 	}
 
 	return "Deploy", nil
-}
-
-// Utils
-
-func eqNodeImage(node v1beta1.Node, image string) bool {
-	if node.Status.NodeProperties.Image == image {
-		return true
-	}
-	return false
-}
-
-func eqNodeFlavor(node v1beta1.Node, flavor string) bool {
-	if node.Status.NodeProperties.Flavor == flavor {
-		return true
-	}
-	return false
-}
-
-func nodesAreConsistent(nodes []v1beta1.Node) bool {
-	// Get first node
-	compareNode := nodes[0]
-	for idx, node := range nodes {
-		if idx == 0 {
-			// Useless to compare first node with itself
-			continue
-		}
-		if node.Status.NodeProperties.ID == "non-existent-machine" {
-			continue
-		}
-		if compareNode.Status.NodeProperties.Flavor != node.Status.NodeProperties.Flavor || compareNode.Status.NodeProperties.Image != node.Status.NodeProperties.Image {
-			return false
-		}
-	}
-	return true
-}
-
-func getNodesCount(nodes []v1beta1.Node) int {
-	count := 0
-	for _, node := range nodes {
-		if node.Status.NodeProperties.ID != "non-existent-machine" {
-			count++
-		}
-	}
-	return count
 }
