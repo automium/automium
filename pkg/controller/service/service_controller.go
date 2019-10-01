@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	corev1beta1 "github.com/automium/automium/pkg/apis/core/v1beta1"
+	"github.com/automium/automium/pkg/slack"
 	"github.com/automium/automium/pkg/utils"
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -265,6 +266,12 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 			glog.Errorf("cannot update service status: %s", err.Error())
 			r.recorder.Eventf(instance, "Warning", "StatusUpdateFailed", "Cannot update service status: %s", err.Error())
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		glog.V(5).Infof("Service phase is not equal - send notification if enabled")
+		err := utils.NotifyStatusViaSlack(instance.Name, instance.Status.Phase)
+		if err != nil && err != slack.ErrWebhookNotEnabled {
+			glog.Warningf("cannot send message via Slack webhook: %s", err)
+			r.recorder.Eventf(instance, "Warning", "SlackWebhookNotificationFailed", "Failed to send notification to Slack: %s", err.Error())
 		}
 	}
 
