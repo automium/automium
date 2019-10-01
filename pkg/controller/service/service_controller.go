@@ -255,15 +255,17 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		}
 	}
 
-	// Get the status from the module
-	instance.Status.Phase = found.Status.Phase
-	instance.Status.ModuleRef = found.Name
+	// Update the status from the module if needed
+	if instance.Status.Phase != found.Status.Phase {
+		instance.Status.Phase = found.Status.Phase
+		instance.Status.ModuleRef = found.Name
 
-	err = r.Status().Update(context.Background(), instance)
-	if err != nil {
-		glog.Errorf("cannot update service status: %s", err.Error())
-		r.recorder.Eventf(instance, "Warning", "StatusUpdateFailed", "Cannot update service status: %s", err.Error())
-		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		err = r.Status().Update(context.Background(), instance)
+		if err != nil {
+			glog.Errorf("cannot update service status: %s", err.Error())
+			r.recorder.Eventf(instance, "Warning", "StatusUpdateFailed", "Cannot update service status: %s", err.Error())
+			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 	}
 
 	if found.Status.Phase == corev1beta1.StatusPhasePending || found.Status.Phase == corev1beta1.StatusPhaseRunning {

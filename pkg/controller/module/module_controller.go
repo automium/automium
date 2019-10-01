@@ -305,7 +305,6 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		r.recorder.Eventf(instance, "Warning", "ModuleStatusUpdateFailed", "Failed to update module status: %s", err.Error())
 		return reconcile.Result{}, err
 	}
-	glog.V(5).Infof("Module %s updated\n", instance.Name)
 
 	// Trigger a requeue if the module is running or pending
 	if status == corev1beta1.StatusPhasePending || status == corev1beta1.StatusPhaseRunning {
@@ -319,20 +318,28 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 }
 
 func (r *ReconcileModule) updateModuleStatus(module *corev1beta1.Module, action, phase string) error {
-	module.Status.Phase = phase
-	module.Status.Replicas = module.Spec.Replicas
-
 	cur, upd, err := r.getUpdatedNodes(module.Namespace, module.ObjectMeta.Annotations["service.automium.io/name"], action, module.Spec.Image, module.Spec.Flavor)
 	if err != nil {
 		return err
 	}
-	module.Status.CurrentReplicas = cur
-	module.Status.UpdatedReplicas = upd
 
-	err = r.Status().Update(context.Background(), module)
-	if err != nil {
-		return err
+	// Build updated module status and compare with the actual one
+	updModuleStatus := module.Status
+	updModuleStatus.Phase = phase
+	updModuleStatus.Replicas = module.Spec.Replicas
+	updModuleStatus.CurrentReplicas = cur
+	updModuleStatus.UpdatedReplicas = upd
+
+	if !reflect.DeepEqual(module.Status, updModuleStatus) {
+		glog.V(5).Infof("Module status is not deep equal - updating")
+		module.Status = updModuleStatus
+		err = r.Status().Update(context.Background(), module)
+		if err != nil {
+			return err
+		}
+		glog.V(5).Infof("Module %s updated\n", module.Name)
 	}
+
 	return nil
 }
 
