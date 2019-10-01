@@ -17,5 +17,3 @@ before_deploy:
 deploy:
   provider: script
   script: docker push "${IMAGE_NAME}:${TRAVIS_BRANCH}"
-  on:
-    branch: master
