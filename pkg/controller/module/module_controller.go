@@ -223,10 +223,10 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		r.recorder.Event(instance, "Normal", "Created", "Module created")
 	}
 
-	// While the pod is starting, skip the reconcile
+	// While the pod is starting, delay the reconcile
 	if len(found.Spec.Template.Spec.Containers) == 0 {
-		glog.Infof("no containers found for the job %s/%s\n", deploy.Namespace, deploy.Name)
-		return reconcile.Result{}, nil
+		glog.Infof("no containers found for the job %s/%s -- next check in 5s\n", deploy.Namespace, deploy.Name)
+		return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// Check if the job needs to be recreated
