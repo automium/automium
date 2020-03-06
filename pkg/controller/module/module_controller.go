@@ -532,14 +532,16 @@ func (r *ReconcileModule) chooseModuleAction(module *v1beta1.Module) (string, er
 	}
 
 	// Check if all nodes are consistent (same image and flavor); if not, force an upgrade
-	if !utils.NodesAreConsistent(moduleNodes) {
+	nodesConsistent, healthyNode := utils.NodesAreConsistent(moduleNodes)
+	if !nodesConsistent {
 		return "Upgrade", nil
 	}
 
-	// Now we are sure all nodes have the same flavor and image; use the first node found for comparison
-	// If desired image and flavor are different from the found ones, do an upgrade
-	if !utils.EqNodeFlavor(moduleNodes[0], module.Spec.Flavor) || !utils.EqNodeImage(moduleNodes[0], module.Spec.Image) {
-		return "Upgrade", nil
+	// If we have an healthy node, and its flavor or image are different from the Module ones, do an upgrade
+	if healthyNode.Status.NodeProperties.Node != "" {
+		if !utils.EqNodeFlavor(healthyNode, module.Spec.Flavor) || !utils.EqNodeImage(healthyNode, module.Spec.Image) {
+			return "Upgrade", nil
+		}
 	}
 
 	return "Deploy", nil
