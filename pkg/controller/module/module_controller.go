@@ -481,9 +481,13 @@ func (r *ReconcileModule) manageNodesForModule(module *corev1beta1.Module) error
 		glog.V(2).Infof("service %s - node replicas: %d -> %d\n", appName, len(appNodes), module.Spec.Replicas)
 
 		for _, item := range arrToDelete {
-			glog.V(2).Infof("service: %s - marking for deletion node %s\n", appName, item.Spec.Hostname)
-			item.Spec.DeletionDate = time.Now().String()
-			r.Update(context.TODO(), &item)
+			if item.Spec.DeletionDate == "" {
+				glog.V(2).Infof("service: %s - marking for deletion node %s\n", appName, item.Spec.Hostname)
+				item.Spec.DeletionDate = time.Now().String()
+				r.Update(context.TODO(), &item)
+			} else {
+				glog.V(2).Infof("service: %s -node %s already marked for deletion\n", appName, item.Spec.Hostname)
+			}
 		}
 	}
 
