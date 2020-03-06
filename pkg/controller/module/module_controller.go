@@ -147,6 +147,7 @@ func (r *ReconcileModule) Reconcile(request reconcile.Request) (reconcile.Result
 		r.recorder.Eventf(instance, "Warning", "ModuleEvaluationFailed", "Module action evaluation failed: %s", err.Error())
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
+	glog.V(5).Infof("Action selected for module: %s\n", action)
 
 	// Define the command to be executed by the Job
 	jobCommand := []string{}
@@ -438,6 +439,8 @@ func (r *ReconcileModule) manageNodesForModule(module *corev1beta1.Module) error
 				if clusterName == "" {
 					return goerrors.New("requested a Kubernetes nodepool but no cluster_name env variable provided, cannot continue")
 				}
+
+				glog.V(5).Infof("Adding a new Node for service %s (hostname: %s)\n", serviceName, fmt.Sprintf("%s-%s-%d", clusterName, serviceName, i))
 
 				specHostname = fmt.Sprintf("%s-%s-%d", clusterName, serviceName, i)
 			default:
