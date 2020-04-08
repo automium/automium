@@ -65,6 +65,18 @@ spec:
               items:
                 type: object
               type: array
+            extra:
+              items:
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+                required:
+                - name
+                - version
+                type: object
+              type: array
             flavor:
               type: string
             replicas:

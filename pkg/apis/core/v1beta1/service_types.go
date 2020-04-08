@@ -21,9 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ServiceSpec defines the desired state of Service
 type ServiceSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
@@ -34,6 +31,13 @@ type ServiceSpec struct {
 	Version  string          `json:"version"`
 	Tags     []string        `json:"tags,omitempty"`
 	Env      []corev1.EnvVar `json:"env,omitempty"`
+	Extra    []ExtraSpec     `json:"extra,omitempty"`
+}
+
+// ExtraSpec defines the Extra field format
+type ExtraSpec struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 // ServiceStatus defines the observed state of Service
