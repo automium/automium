@@ -176,6 +176,12 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 			},
 		}
 		appProvisioner = "kubernetes"
+		// Manage the "Monitoring" extra for the cluster
+		err := r.ManageMonitoringExtra(instance)
+		if err != nil {
+			glog.Errorf("cannot manage Monitoring resource for cluster %s: %s", instance.Name, err.Error())
+			return reconcile.Result{}, err
+		}
 	case "kubernetes-nodepool":
 		specificEnvVars = []corev1.EnvVar{
 			{

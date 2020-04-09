@@ -46,6 +46,26 @@ rules:
   - create
   - patch
 - apiGroups:
+  - extras.automium.io
+  resources:
+  - monitorings
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - extras.automium.io
+  resources:
+  - monitorings/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
   - core.automium.io
   resources:
   - nodes

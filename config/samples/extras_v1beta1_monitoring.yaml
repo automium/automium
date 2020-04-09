@@ -1,0 +1,9 @@
+apiVersion: extras.automium.io/v1beta1
+kind: Monitoring
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: monitoring-sample
+spec:
+  cluster: test
+  version: 1.0.0

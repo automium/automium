@@ -6,7 +6,7 @@ all: test manager
 
 # Run tests
 test: generate fmt vet manifests
-	go test ./pkg/... ./cmd/... -coverprofile cover.out
+	RANCHER_URL=localhost RANCHER_CLUSTER_TOKEN=abc123 ALERTMANAGER_URL=localhost ALERTMANAGER_USERNAME=test ALERTMANAGER_PASSWORD=test go test ./pkg/... ./cmd/... -coverprofile cover.out
 
 # Build manager binary
 manager: generate fmt vet
