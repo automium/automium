@@ -104,8 +104,9 @@ func (r *ReconcileMonitoring) Reconcile(request reconcile.Request) (reconcile.Re
 	// Check if we have an active cluster with the specified name
 	clusterID, err := getRancherClusterIDFromName(instance.Spec.Cluster)
 	if err != nil {
-		glog.Errorf("cannot get ID for cluster: %s -- requery in 10s\n", err.Error())
-		return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+		glog.Errorf("cannot get ID for cluster: %s\n", err.Error())
+		r.updateStatus(instance, "Pending")
+		return reconcile.Result{}, err
 	}
 
 	glog.V(5).Infof("got cluster ID: %s\n", clusterID)
@@ -113,8 +114,9 @@ func (r *ReconcileMonitoring) Reconcile(request reconcile.Request) (reconcile.Re
 	// Retrieve the System project ID
 	systemProjectID, err := getRancherProjectIDFromName(clusterID, "System")
 	if err != nil {
-		glog.Errorf("cannot get ID for System project: %s -- requery in 10s\n", err.Error())
-		return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+		glog.Errorf("cannot get ID for System project: %s\n", err.Error())
+		r.updateStatus(instance, "Pending")
+		return reconcile.Result{}, err
 	}
 
 	glog.V(5).Infof("got System project ID: %s\n", systemProjectID)
@@ -122,8 +124,9 @@ func (r *ReconcileMonitoring) Reconcile(request reconcile.Request) (reconcile.Re
 	// Retrieve the apps inside the System project
 	systemApps, err := getRancherAppsFromProject(systemProjectID)
 	if err != nil {
-		glog.Errorf("cannot get apps for System project: %s -- requery in 10s\n", err.Error())
-		return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+		glog.Errorf("cannot get apps for System project: %s\n", err.Error())
+		r.updateStatus(instance, "Pending")
+		return reconcile.Result{}, err
 	}
 
 	glog.V(5).Infof("found apps: %+v\n", systemApps)
@@ -147,8 +150,9 @@ func (r *ReconcileMonitoring) Reconcile(request reconcile.Request) (reconcile.Re
 			}
 			err := deployMonitoringApp(clusterID, systemProjectID, instance.Spec.Version, false)
 			if err != nil {
-				glog.Errorf("cannot install monitoring app in System project: %s -- requery in 10s\n", err.Error())
-				return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+				glog.Errorf("cannot upgrade monitoring app in System project: %s\n", err.Error())
+				r.updateStatus(instance, "Failed")
+				return reconcile.Result{}, err
 			}
 		} else {
 			glog.V(2).Infof("monitoring app on cluster %s is up-to-date\n", instance.Spec.Cluster)
@@ -161,8 +165,9 @@ func (r *ReconcileMonitoring) Reconcile(request reconcile.Request) (reconcile.Re
 		}
 		err := deployMonitoringApp(clusterID, systemProjectID, instance.Spec.Version, true)
 		if err != nil {
-			glog.Errorf("cannot install monitoring app in System project: %s -- requery in 10s\n", err.Error())
-			return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+			glog.Errorf("cannot install monitoring app in System project: %s\n", err.Error())
+			r.updateStatus(instance, "Failed")
+			return reconcile.Result{}, err
 		}
 	}
 
