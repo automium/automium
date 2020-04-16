@@ -54,7 +54,7 @@ type rancherStorageClassItem struct {
 	Parameters  map[string]string `json:"parameters"`
 }
 
-var requiredEnvVars = []string{"RANCHER_URL", "RANCHER_CLUSTER_TOKEN", "ALERTMANAGER_URL", "ALERTMANAGER_USERNAME", "ALERTMANAGER_PASSWORD"}
+var requiredEnvVars = []string{"RANCHER_URL", "RANCHER_CLUSTER_TOKEN", "ALERTMANAGER_URL", "ALERTMANAGER_USERNAME", "ALERTMANAGER_PASSWORD", "ALERTMANAGER_INFRANAME"}
 
 // doEnvCheck checks if the necessary env vars are set
 func doEnvCheck() error {
@@ -258,6 +258,7 @@ func deployMonitoringApp(clusterID, projectID, version string, newInstallation b
 		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].basic_auth.username":          os.Getenv("ALERTMANAGER_USERNAME"),
 		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].basic_auth.password":          os.Getenv("ALERTMANAGER_PASSWORD"),
 		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].scheme":                       "https",
+		"prometheus.server.global.external_labels.infraName":                                             os.Getenv("ALERTMANAGER_INFRANAME"),
 	}
 
 	if newInstallation {
