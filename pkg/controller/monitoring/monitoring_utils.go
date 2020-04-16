@@ -257,6 +257,7 @@ func deployMonitoringApp(clusterID, projectID, version string, newInstallation b
 		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].static_configs[0].targets[0]": os.Getenv("ALERTMANAGER_URL"),
 		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].basic_auth.username":          os.Getenv("ALERTMANAGER_USERNAME"),
 		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].basic_auth.password":          os.Getenv("ALERTMANAGER_PASSWORD"),
+		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].scheme":                       "https",
 	}
 
 	if newInstallation {
