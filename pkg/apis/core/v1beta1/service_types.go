@@ -36,8 +36,9 @@ type ServiceSpec struct {
 
 // ExtraSpec defines the Extra field format
 type ExtraSpec struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Name       string            `json:"name"`
+	Version    string            `json:"version"`
+	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
 // ServiceStatus defines the observed state of Service

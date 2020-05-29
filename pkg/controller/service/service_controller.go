@@ -176,12 +176,6 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 			},
 		}
 		appProvisioner = "kubernetes"
-		// Manage the "Monitoring" extra for the cluster
-		err := r.ManageMonitoringExtra(instance)
-		if err != nil {
-			glog.Errorf("cannot manage Monitoring resource for cluster %s: %s", instance.Name, err.Error())
-			return reconcile.Result{}, err
-		}
 	case "kubernetes-nodepool":
 		specificEnvVars = []corev1.EnvVar{
 			{
@@ -284,6 +278,16 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	if found.Status.Phase == corev1beta1.StatusPhasePending || found.Status.Phase == corev1beta1.StatusPhaseRunning {
 		glog.V(2).Infof("service module %s is in Pending or Running -- reschedule update in 15s.\n", instance.Name)
 		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
+	}
+
+	// If it's a master deployment and it is in Completed phase, then manage the extra resources
+	if instance.Status.Phase == corev1beta1.StatusPhaseCompleted && instance.ObjectMeta.Labels["app"] == "kubernetes-cluster" {
+		glog.V(5).Infof("Managing extras for service %s/%s\n", instance.Namespace, instance.Name)
+		err := r.ManageExtras(instance)
+		if err != nil {
+			glog.Errorf("cannot manage Extra resource for cluster %s: %s", instance.Name, err.Error())
+			return reconcile.Result{}, err
+		}
 	}
 
 	return reconcile.Result{RequeueAfter: 30 * time.Second}, nil

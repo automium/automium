@@ -5,6 +5,26 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - extras.automium.io
+  resources:
+  - applications
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - extras.automium.io
+  resources:
+  - applications/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
   - batch
   resources:
   - jobs

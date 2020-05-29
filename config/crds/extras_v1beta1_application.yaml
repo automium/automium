@@ -4,9 +4,13 @@ metadata:
   creationTimestamp: null
   labels:
     controller-tools.k8s.io: "1.0"
-  name: monitorings.extras.automium.io
+  name: applications.extras.automium.io
 spec:
   additionalPrinterColumns:
+  - JSONPath: .spec.name
+    description: Application name
+    name: Application
+    type: string
   - JSONPath: .spec.cluster
     description: Target cluster
     name: Cluster
@@ -15,13 +19,17 @@ spec:
     description: Monitoring stack version
     name: Version
     type: string
+  - JSONPath: .status.phase
+    description: The execution phase
+    name: Status
+    type: string
   - JSONPath: .metadata.creationTimestamp
     name: Age
     type: date
   group: extras.automium.io
   names:
-    kind: Monitoring
-    plural: monitorings
+    kind: Application
+    plural: applications
   scope: Namespaced
   subresources:
     status: {}
@@ -44,15 +52,31 @@ spec:
           properties:
             cluster:
               type: string
+            name:
+              type: string
+            namespace:
+              type: string
             parameters:
               type: object
+            project:
+              type: string
             version:
               type: string
           required:
-          - cluster
+          - name
           - version
+          - cluster
+          - project
+          - namespace
           type: object
         status:
+          properties:
+            error:
+              type: string
+            phase:
+              type: string
+          required:
+          - phase
           type: object
   version: v1beta1
 status:

@@ -18,15 +18,19 @@ package monitoring
 
 import (
 	"context"
-	"fmt"
-	"time"
+	"reflect"
 
-	extrasv1beta1 "github.com/automium/automium/pkg/apis/extras/v1beta1"
 	"github.com/golang/glog"
+
+	"github.com/automium/automium/pkg/apis/extras/v1beta1"
+	extrasv1beta1 "github.com/automium/automium/pkg/apis/extras/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -50,11 +54,6 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
-	// Check if the environment variables are set
-	if err := doEnvCheck(); err != nil {
-		return fmt.Errorf("cannot validate controller environment: %s", err.Error())
-	}
-
 	// Create a new controller
 	c, err := controller.New("monitoring-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
@@ -66,6 +65,17 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if err != nil {
 		return err
 	}
+
+	// Watch the Applications created for the Monitoring
+	err = c.Watch(&source.Kind{Type: &extrasv1beta1.Application{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &extrasv1beta1.Monitoring{},
+	})
+	if err != nil {
+		return err
+	}
+
+	glog.Infoln("monitoring controller initialized")
 
 	return nil
 }
@@ -80,9 +90,6 @@ type ReconcileMonitoring struct {
 
 // Reconcile reads that state of the cluster for a Monitoring object and makes changes based on the state read
 // and what is in the Monitoring.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  The scaffolding writes
-// a Deployment as an example
-// Automatically generate RBAC rules to allow the Controller to read and write Deployments
 // +kubebuilder:rbac:groups=extras.automium.io,resources=monitorings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=extras.automium.io,resources=monitorings/status,verbs=get;update;patch
 func (r *ReconcileMonitoring) Reconcile(request reconcile.Request) (reconcile.Result, error) {
@@ -99,92 +106,45 @@ func (r *ReconcileMonitoring) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
-	glog.V(2).Infof("starting monitoring reconciliation for cluster %s", instance.Spec.Cluster)
-
-	// Check if we have an active cluster with the specified name
-	clusterID, err := getRancherClusterIDFromName(instance.Spec.Cluster)
-	if err != nil {
-		glog.Errorf("cannot get ID for cluster: %s\n", err.Error())
-		r.updateStatus(instance, "Pending")
+	// Define the desired monitoring Application object
+	deploy := &v1beta1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-app",
+			Namespace: instance.Namespace,
+		},
+		Spec: v1beta1.ApplicationSpec{
+			Name:       "automium-monitoring",
+			Version:    instance.Spec.Version,
+			Cluster:    instance.Spec.Cluster,
+			Project:    "System",
+			Namespace:  "automium-prometheus",
+			Parameters: instance.Spec.Parameters,
+		},
+	}
+	if err := controllerutil.SetControllerReference(instance, deploy, r.scheme); err != nil {
 		return reconcile.Result{}, err
 	}
 
-	glog.V(5).Infof("got cluster ID: %s\n", clusterID)
-
-	// Retrieve the System project ID
-	systemProjectID, err := getRancherProjectIDFromName(clusterID, "System")
-	if err != nil {
-		glog.Errorf("cannot get ID for System project: %s\n", err.Error())
-		r.updateStatus(instance, "Pending")
+	// Check if the Application already exists
+	found := &v1beta1.Application{}
+	err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
+	if err != nil && errors.IsNotFound(err) {
+		glog.Infof("Creating new monitoring application %s/%s\n", deploy.ObjectMeta.Namespace, deploy.ObjectMeta.Name)
+		err = r.Create(context.TODO(), deploy)
+		return reconcile.Result{}, err
+	} else if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	glog.V(5).Infof("got System project ID: %s\n", systemProjectID)
-
-	// Retrieve the apps inside the System project
-	systemApps, err := getRancherAppsFromProject(systemProjectID)
-	if err != nil {
-		glog.Errorf("cannot get apps for System project: %s\n", err.Error())
-		r.updateStatus(instance, "Pending")
-		return reconcile.Result{}, err
-	}
-
-	glog.V(5).Infof("found apps: %+v\n", systemApps)
-
-	// Check if the monitoring app has been deployed
-	monitApp := appItem{Name: "does-not-exists"}
-	for _, app := range systemApps {
-		if app.Name == "automium-monitoring" {
-			monitApp = app
-			break
-		}
-	}
-
-	if monitApp.Name == "automium-monitoring" {
-		// Check the version and if necessary update
-		if monitApp.Version != instance.Spec.Version {
-			// Upgrade
-			glog.V(2).Infof("upgrade needed for monitoring app on cluster %s -- executing\n", instance.Spec.Cluster)
-			if err := r.updateStatus(instance, "Upgrading"); err != nil {
-				return reconcile.Result{}, err
-			}
-			err := deployMonitoringApp(clusterID, systemProjectID, instance.Spec.Version, false)
-			if err != nil {
-				glog.Errorf("cannot upgrade monitoring app in System project: %s\n", err.Error())
-				r.updateStatus(instance, "Failed")
-				return reconcile.Result{}, err
-			}
-		} else {
-			glog.V(2).Infof("monitoring app on cluster %s is up-to-date\n", instance.Spec.Cluster)
-		}
-	} else {
-		// New installation
-		glog.V(2).Infof("new installation of monitoring app requested on cluster %s -- executing\n", instance.Spec.Cluster)
-		if err := r.updateStatus(instance, "Deploying"); err != nil {
-			return reconcile.Result{}, err
-		}
-		err := deployMonitoringApp(clusterID, systemProjectID, instance.Spec.Version, true)
+	// Update the found object and write the result back if there are any changes
+	if !reflect.DeepEqual(deploy.Spec, found.Spec) {
+		found.Spec = deploy.Spec
+		glog.Infof("Updating monitoring application %s/%s\n", deploy.ObjectMeta.Namespace, deploy.ObjectMeta.Name)
+		err = r.Update(context.TODO(), found)
 		if err != nil {
-			glog.Errorf("cannot install monitoring app in System project: %s\n", err.Error())
-			r.updateStatus(instance, "Failed")
 			return reconcile.Result{}, err
 		}
 	}
 
-	glog.V(2).Infof("completeted monitoring reconciliation for cluster %s", instance.Spec.Cluster)
-	if err := r.updateStatus(instance, "Deployed"); err != nil {
-		return reconcile.Result{}, err
-	}
-	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-}
-
-func (r *ReconcileMonitoring) updateStatus(item *extrasv1beta1.Monitoring, phase string) error {
-	// If the phase is the same, skip
-	if item.Status.Phase == phase {
-		return nil
-	}
-
-	// Update the item
-	item.Status.Phase = phase
-	return r.Status().Update(context.Background(), item)
+	return reconcile.Result{}, nil
 }

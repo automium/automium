@@ -1,4 +1,4 @@
-package monitoring
+package application
 
 import (
 	"bytes"
@@ -8,8 +8,11 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 
+	"github.com/automium/automium/pkg/apis/extras/v1beta1"
+	extrasv1beta1 "github.com/automium/automium/pkg/apis/extras/v1beta1"
 	"github.com/golang/glog"
 )
 
@@ -20,6 +23,7 @@ type appItem struct {
 	Version   string
 	Namespace string
 	State     string
+	Answers   map[string]string
 }
 
 type rancherDataItem struct {
@@ -201,6 +205,7 @@ func getRancherAppsFromProject(projectID string) ([]appItem, error) {
 			Version:   externalURL.Query().Get("version"),
 			Namespace: itm.TargetNamespace,
 			State:     itm.State,
+			Answers:   itm.Answers,
 		})
 	}
 
@@ -222,6 +227,7 @@ func refreshAutomiumCatalog() error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("cannot refresh catalog - error: %s (%d)", resp.Status, resp.StatusCode)
@@ -231,8 +237,8 @@ func refreshAutomiumCatalog() error {
 
 }
 
-// deployMonitoringApp installs or upgrades the monitoring app
-func deployMonitoringApp(clusterID, projectID, version string, newInstallation bool) error {
+// deployApplication installs or upgrades the provided application
+func deployApplication(clusterID, projectID string, appManifest v1beta1.Application, newInstallation bool) error {
 	var deployURL string
 
 	// Refresh the catalog to be sure the local Rancher cache is updated
@@ -243,27 +249,24 @@ func deployMonitoringApp(clusterID, projectID, version string, newInstallation b
 
 	// Prepare the request content
 	installBody := rancherAppItem{
-		Name:            "automium-monitoring",
+		Name:            appManifest.Spec.Name,
 		ProjectID:       projectID,
-		ExternalID:      fmt.Sprintf("catalog://?catalog=automium&template=automium-monitoring&version=%s", version),
+		ExternalID:      fmt.Sprintf("catalog://?catalog=automium&template=%s&version=%s", appManifest.Spec.Name, appManifest.Spec.Version),
 		Prune:           false,
-		TargetNamespace: "automium-prometheus",
+		TargetNamespace: appManifest.Spec.Namespace,
 	}
 
-	// Set the answers
-	installBody.Answers = map[string]string{
-		"prometheus.server.persistentVolume.storageClass":                                                "automium-monitoring-sc",
-		"grafana.persistence.storageClassName":                                                           "automium-monitoring-sc",
-		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].static_configs[0].targets[0]": os.Getenv("ALERTMANAGER_URL"),
-		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].basic_auth.username":          os.Getenv("ALERTMANAGER_USERNAME"),
-		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].basic_auth.password":          os.Getenv("ALERTMANAGER_PASSWORD"),
-		"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].scheme":                       "https",
-		"prometheus.server.global.external_labels.infraName":                                             os.Getenv("ALERTMANAGER_INFRANAME"),
+	// Generate the answers
+	appAnswers, err := buildAppAnswers(appManifest)
+	if err != nil {
+		return err
 	}
+	installBody.Answers = appAnswers
 
 	if newInstallation {
-		// Create the storage class
-		if err := createMonitoringStorageClass(clusterID); err != nil {
+		// Move the namespace into the project if needed
+		err = moveNamespaceInProject(clusterID, projectID, appManifest.Spec.Namespace)
+		if err != nil {
 			return err
 		}
 		// Set the deploy URL
@@ -273,8 +276,8 @@ func deployMonitoringApp(clusterID, projectID, version string, newInstallation b
 		deployURL = fmt.Sprintf("https://%s/v3/projects/%s/apps/%s:automium-monitoring?action=upgrade", os.Getenv("RANCHER_URL"), projectID, strings.Split(projectID, ":")[1])
 	}
 
-	glog.V(5).Infof("monitoring new installation? %t\n", newInstallation)
-	glog.V(5).Infof("monitoring deploy URL: %s\n", deployURL)
+	glog.V(5).Infof("app %s new installation? %t\n", appManifest.Spec.Name, newInstallation)
+	glog.V(5).Infof("app %s deploy URL: %s\n", appManifest.Spec.Name, deployURL)
 
 	// Convert to JSON
 	installBodyJSON, err := json.Marshal(installBody)
@@ -301,7 +304,7 @@ func deployMonitoringApp(clusterID, projectID, version string, newInstallation b
 	bodyResp, _ := ioutil.ReadAll(resp.Body)
 	glog.V(5).Infof("Response body: %s\n", string(bodyResp))
 
-	if resp.StatusCode != 201 {
+	if resp.StatusCode != 201 && resp.StatusCode != 204 {
 		return fmt.Errorf("cannot create monitoring app - error: %s (%d)", resp.Status, resp.StatusCode)
 	}
 
@@ -309,51 +312,110 @@ func deployMonitoringApp(clusterID, projectID, version string, newInstallation b
 
 }
 
-// createMonitoringStorageClass creates a storage class used for monitoring persistent data
-func createMonitoringStorageClass(clusterID string) error {
-	var provisioner string
-
-	parameters := make(map[string]string)
+// generateStorageClassConfiguration produces a map for provider-specific storage class configuration
+func generateStorageClassConfiguration() (map[string]string, error) {
+	values := make(map[string]string)
 
 	// Check the provider
 	switch os.Getenv("PLATFORM") {
 	case "openstack":
-		provisioner = "kubernetes.io/cinder"
-		parameters["type"] = "Top"
+		values["automium.storageClass.provisioner"] = "kubernetes.io/cinder"
+		values["automium.storageClass.parameters.\"type\""] = "Top"
 		if os.Getenv("PLATFORM_REGION") != "" {
-			parameters["availability"] = os.Getenv("PLATFORM_REGION")
+			values["automium.storageClass.parameters.\"availability\""] = os.Getenv("PLATFORM_REGION")
 		}
-		break
+		return values, nil
 	default:
-		return fmt.Errorf("provider not supported")
+		return values, fmt.Errorf("provider not supported")
 	}
 
-	// Prepare the request content
-	requestBody := rancherStorageClassItem{
-		Name:        "automium-monitoring-sc",
-		Type:        "storageClass",
-		Provisioner: provisioner,
-		Parameters:  parameters,
-	}
+}
 
-	// Convert to JSON
-	requestBodyJSON, err := json.Marshal(requestBody)
+// getDefaultAnswersForApp return default answers for specific applications
+func getDefaultAnswersForApp(appName string) (map[string]string, error) {
+	switch appName {
+	case "automium-monitoring":
+		monitoringDefValues := map[string]string{
+			"prometheus.server.persistentVolume.storageClass":                                                "automium-monitoring-sc",
+			"grafana.persistence.storageClassName":                                                           "automium-monitoring-sc",
+			"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].static_configs[0].targets[0]": os.Getenv("ALERTMANAGER_URL"),
+			"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].basic_auth.username":          os.Getenv("ALERTMANAGER_USERNAME"),
+			"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].basic_auth.password":          os.Getenv("ALERTMANAGER_PASSWORD"),
+			"prometheus.serverFiles.prometheus\\.yml.alerting.alertmanagers[0].scheme":                       "https",
+			"prometheus.server.global.external_labels.infraName":                                             os.Getenv("ALERTMANAGER_INFRANAME"),
+		}
+		// Generate the configuration for the storage class
+		scMap, err := generateStorageClassConfiguration()
+		if err != nil {
+			return map[string]string{}, err
+		}
+		// Add the keys
+		for k, v := range scMap {
+			monitoringDefValues[k] = v
+		}
+		// Return the map
+		return monitoringDefValues, nil
+	default:
+		return map[string]string{}, nil
+	}
+}
+
+// moveNamespaceInProject moves a namespace into a Rancher project
+func moveNamespaceInProject(clusterID, projectID, namespace string) error {
+
+	var moveRequest struct {
+		ProjectID string `json:"projectId"`
+	}
+	moveRequest.ProjectID = projectID
+	moveRequestBytes, err := json.Marshal(moveRequest)
 	if err != nil {
 		return err
 	}
 
-	// Prepare the request
+	glog.V(5).Infof("moving namespace %s into project %s\n", namespace, projectID)
+
 	req, err := prepareHTTPRequest(
 		"POST",
-		fmt.Sprintf("https://%s/v3/clusters/%s/storageclass", os.Getenv("RANCHER_URL"), clusterID),
-		bytes.NewBuffer(requestBodyJSON),
+		fmt.Sprintf("https://%s/v3/cluster/%s/namespaces/%s?action=move", os.Getenv("RANCHER_URL"), clusterID, namespace),
+		bytes.NewBuffer(moveRequestBytes),
 	)
 	if err != nil {
 		return err
 	}
+	resp, err := defaultHTTPClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
-	// Make the request
-	_, err = defaultHTTPClient().Do(req)
-	return err
+	if resp.StatusCode != 200 {
+		failureMsg, _ := ioutil.ReadAll(resp.Body)
+		return fmt.Errorf("cannot move namespace to project - error: %s (%d) - %s", resp.Status, resp.StatusCode, string(failureMsg))
+	}
 
+	return nil
+}
+
+func buildAppAnswers(appManifest extrasv1beta1.Application) (map[string]string, error) {
+	// Set the default answers for the application...
+	appAnswers, err := getDefaultAnswersForApp(appManifest.Spec.Name)
+	if err != nil {
+		return map[string]string{}, err
+	}
+
+	// ...and add/override them with the provided ones
+	for k, v := range appManifest.Spec.Parameters {
+		appAnswers[k] = v
+	}
+	return appAnswers, nil
+}
+
+func answersEquals(deployedAppAnswers map[string]string, appManifest extrasv1beta1.Application) (bool, error) {
+	// Generate the answers for the application
+	desiredAnswers, err := buildAppAnswers(appManifest)
+	if err != nil {
+		return false, err
+	}
+
+	return reflect.DeepEqual(deployedAppAnswers, desiredAnswers), nil
 }

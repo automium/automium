@@ -1,4 +1,4 @@
-package monitoring
+package application
 
 import (
 	"crypto/tls"
