@@ -332,8 +332,8 @@ func generateStorageClassConfiguration() (map[string]string, error) {
 }
 
 // getDefaultAnswersForApp return default answers for specific applications
-func getDefaultAnswersForApp(appName string) (map[string]string, error) {
-	switch appName {
+func getDefaultAnswersForApp(appManifest extrasv1beta1.Application) (map[string]string, error) {
+	switch appManifest.Spec.Name {
 	case "automium-monitoring":
 		monitoringDefValues := map[string]string{
 			"prometheus.server.persistentVolume.storageClass":                                                "automium-monitoring-sc",
@@ -398,7 +398,7 @@ func moveNamespaceInProject(clusterID, projectID, namespace string) error {
 
 func buildAppAnswers(appManifest extrasv1beta1.Application) (map[string]string, error) {
 	// Set the default answers for the application...
-	appAnswers, err := getDefaultAnswersForApp(appManifest.Spec.Name)
+	appAnswers, err := getDefaultAnswersForApp(appManifest)
 	if err != nil {
 		return map[string]string{}, err
 	}
