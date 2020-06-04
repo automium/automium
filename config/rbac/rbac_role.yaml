@@ -25,6 +25,26 @@ rules:
   - update
   - patch
 - apiGroups:
+  - extras.automium.io
+  resources:
+  - backups
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - extras.automium.io
+  resources:
+  - backups/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
   - batch
   resources:
   - jobs

@@ -58,7 +58,7 @@ type rancherStorageClassItem struct {
 	Parameters  map[string]string `json:"parameters"`
 }
 
-var requiredEnvVars = []string{"RANCHER_URL", "RANCHER_CLUSTER_TOKEN", "ALERTMANAGER_URL", "ALERTMANAGER_USERNAME", "ALERTMANAGER_PASSWORD", "ALERTMANAGER_INFRANAME"}
+var requiredEnvVars = []string{"RANCHER_URL", "RANCHER_CLUSTER_TOKEN", "ALERTMANAGER_URL", "ALERTMANAGER_USERNAME", "ALERTMANAGER_PASSWORD", "ALERTMANAGER_INFRANAME", "BACKUP_ENV"}
 
 // doEnvCheck checks if the necessary env vars are set
 func doEnvCheck() error {
@@ -273,7 +273,7 @@ func deployApplication(clusterID, projectID string, appManifest v1beta1.Applicat
 		deployURL = fmt.Sprintf("https://%s/v3/projects/%s/app", os.Getenv("RANCHER_URL"), projectID)
 	} else {
 		// Set the deploy URL for upgrade
-		deployURL = fmt.Sprintf("https://%s/v3/projects/%s/apps/%s:automium-monitoring?action=upgrade", os.Getenv("RANCHER_URL"), projectID, strings.Split(projectID, ":")[1])
+		deployURL = fmt.Sprintf("https://%s/v3/projects/%s/apps/%s:%s?action=upgrade", os.Getenv("RANCHER_URL"), projectID, strings.Split(projectID, ":")[1], appManifest.Spec.Name)
 	}
 
 	glog.V(5).Infof("app %s new installation? %t\n", appManifest.Spec.Name, newInstallation)
@@ -355,6 +355,12 @@ func getDefaultAnswersForApp(appManifest extrasv1beta1.Application) (map[string]
 		}
 		// Return the map
 		return monitoringDefValues, nil
+	case "automium-backup":
+		return map[string]string{
+			"clusterName":      appManifest.Spec.Cluster,
+			"backupEnv":        os.Getenv("BACKUP_ENV"),
+			"backupRepository": fmt.Sprintf("swift:automium:/cluster-backups/%s", appManifest.Spec.Cluster),
+		}, nil
 	default:
 		return map[string]string{}, nil
 	}
