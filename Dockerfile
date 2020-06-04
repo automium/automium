@@ -15,6 +15,7 @@ RUN make
 
 # Build the final minimal image
 FROM alpine:latest
-RUN apk add --update ca-certificates && rm -rf /var/cache/apk/*
+RUN apk add --update --no-cache ca-certificates && adduser -s /bin/false -D -u 10000 manager
 COPY --from=builder /go/src/github.com/automium/automium/bin/manager /bin/manager
+USER manager
 ENTRYPOINT ["/bin/manager"]
