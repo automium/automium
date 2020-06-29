@@ -21,26 +21,30 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ModuleSpec defines the desired state of Module
 type ModuleSpec struct {
-	// Important: Run "make" to regenerate code after modifying this file
-
-	Source   string          `json:"source"`
-	Image    string          `json:"image"`
-	Replicas int             `json:"replicas"`
-	Flavor   string          `json:"flavor"`
-	Env      []corev1.EnvVar `json:"env,omitempty"`
+	// Source is the application type defined in the Service.
+	Source string `json:"source"`
+	// Image is the full image name, populated by the source and the version defined in the Service.
+	Image string `json:"image"`
+	// Replicas is the desired number of replicas. Defined in the Service.
+	Replicas int `json:"replicas"`
+	// Flavor is the flavor which will be used for node instances. Defined in the Service.
+	Flavor string `json:"flavor"`
+	// Env is an array of EnvVar used for configuration. Defined in the Service.
+	Env []corev1.EnvVar `json:"env,omitempty"`
 }
 
 // ModuleStatus defines the observed state of Module
 type ModuleStatus struct {
-	Phase           string `json:"phase"`
-	Replicas        int    `json:"replicas"`
-	CurrentReplicas int    `json:"currentReplicas"`
-	UpdatedReplicas int    `json:"updatedReplicas"`
+	// Phase is the service phase. It can be "Running", "Completed", "Pending" or "Failed".
+	Phase string `json:"phase"`
+	// Replicas are the desired active replicas.
+	Replicas int `json:"replicas"`
+	// CurrentReplicas are the current active replicas.
+	CurrentReplicas int `json:"currentReplicas"`
+	// CurrentReplicas are the current updated replicas with the new spec.
+	UpdatedReplicas int `json:"updatedReplicas"`
 }
 
 // +genclient

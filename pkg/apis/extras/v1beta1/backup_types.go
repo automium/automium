@@ -22,8 +22,11 @@ import (
 
 // BackupSpec defines the desired state of Backup
 type BackupSpec struct {
-	Cluster    string            `json:"cluster"`
-	Version    string            `json:"version"`
+	// Cluster is the Rancher name for the target cluster.
+	Cluster string `json:"cluster"`
+	// Version is the version of the Backup application to deploy.
+	Version string `json:"version"`
+	// Parameters are custom answers for the Backup application.
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 

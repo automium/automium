@@ -22,8 +22,11 @@ import (
 
 // MonitoringSpec defines the desired state of Monitoring
 type MonitoringSpec struct {
-	Cluster    string            `json:"cluster"`
-	Version    string            `json:"version"`
+	// Cluster is the Rancher name for the target cluster.
+	Cluster string `json:"cluster"`
+	// Version is the version of the Monitoring application to deploy.
+	Version string `json:"version"`
+	// Parameters are custom answers for the Monitoring application.
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 

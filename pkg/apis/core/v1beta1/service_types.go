@@ -23,27 +23,36 @@ import (
 
 // ServiceSpec defines the desired state of Service
 type ServiceSpec struct {
-	// Important: Run "make" to regenerate code after modifying this file
-
+	// Replicas is the number of service replicas.
 	// +kubebuilder:validation:Minimum=0
-	Replicas int             `json:"replicas"`
-	Flavor   string          `json:"flavor"`
-	Version  string          `json:"version"`
-	Tags     []string        `json:"tags,omitempty"`
-	Env      []corev1.EnvVar `json:"env,omitempty"`
-	Extra    []ExtraSpec     `json:"extra,omitempty"`
+	Replicas int `json:"replicas"`
+	// Flavor is the flavor which will be used for node instances.
+	Flavor string `json:"flavor"`
+	// Version is the image version which will be used for the nodes.
+	Version string `json:"version"`
+	// Tags is an optional field for service tagging. Not used at the moment.
+	Tags []string `json:"tags,omitempty"`
+	// Env is an array of EnvVar used for configuring the service.
+	Env []corev1.EnvVar `json:"env,omitempty"`
+	// Extra is an array of ExtraSpec used for configuring the extra components, such as monitoring or backups, for this service.
+	Extra []ExtraSpec `json:"extra,omitempty"`
 }
 
 // ExtraSpec defines the Extra field format
 type ExtraSpec struct {
-	Name       string            `json:"name"`
-	Version    string            `json:"version"`
+	// Name is the extra component name.
+	Name string `json:"name"`
+	// Version is the extra component version.
+	Version string `json:"version"`
+	// Parameters is a map which can be used to further configure the extra component.
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
 // ServiceStatus defines the observed state of Service
 type ServiceStatus struct {
-	Phase     string `json:"phase"`
+	// Phase is the service phase. It can be "Running", "Completed", "Pending" or "Failed".
+	Phase string `json:"phase"`
+	// ModuleRef contains the reference to the module used by this service.
 	ModuleRef string `json:"moduleRef"`
 }
 

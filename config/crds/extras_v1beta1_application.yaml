@@ -51,16 +51,25 @@ spec:
         spec:
           properties:
             cluster:
+              description: Cluster is the cluster name in Rancher.
               type: string
             name:
+              description: Name is the name of the extra application to deploy.
               type: string
             namespace:
+              description: Namespace is the Kubernetes target namespace. If it exists,
+                it will be moved into the Project defined in this resource.
               type: string
             parameters:
+              description: Parameters are the custom answers that will be provided
+                when deploying the extra application.
               type: object
             project:
+              description: Project is the Rancher project where the extra applicaton
+                will be deployed.
               type: string
             version:
+              description: Version is the version of the extra application to deploy.
               type: string
           required:
           - name
@@ -72,8 +81,11 @@ spec:
         status:
           properties:
             error:
+              description: Error is the error string populated if something wrong
+                happend during the deploy.
               type: string
             phase:
+              description: Phase is the deploy status as reported from Rancher.
               type: string
           required:
           - phase

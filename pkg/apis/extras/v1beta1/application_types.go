@@ -22,17 +22,25 @@ import (
 
 // ApplicationSpec defines the desired state of Application
 type ApplicationSpec struct {
-	Name       string            `json:"name"`
-	Version    string            `json:"version"`
-	Cluster    string            `json:"cluster"`
-	Project    string            `json:"project"`
-	Namespace  string            `json:"namespace"`
+	// Name is the name of the extra application to deploy.
+	Name string `json:"name"`
+	// Version is the version of the extra application to deploy.
+	Version string `json:"version"`
+	// Cluster is the cluster name in Rancher.
+	Cluster string `json:"cluster"`
+	// Project is the Rancher project where the extra applicaton will be deployed.
+	Project string `json:"project"`
+	// Namespace is the Kubernetes target namespace. If it exists, it will be moved into the Project defined in this resource.
+	Namespace string `json:"namespace"`
+	// Parameters are the custom answers that will be provided when deploying the extra application.
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application
 type ApplicationStatus struct {
+	// Phase is the deploy status as reported from Rancher.
 	Phase string `json:"phase"`
+	// Error is the error string populated if something wrong happend during the deploy.
 	Error string `json:"error,omitempty"`
 }
 

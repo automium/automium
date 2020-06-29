@@ -59,8 +59,13 @@ spec:
         spec:
           properties:
             deletionDate:
+              description: DeletionDate is the date timestamp on which the Node resource
+                has been marked for deletion. This field is automatically populated
+                by the controller when needed.
               type: string
             hostname:
+              description: Hostname specifies the node which will be tracked by this
+                resource.
               type: string
           required:
           - hostname
@@ -69,19 +74,31 @@ spec:
         status:
           properties:
             nodeHealthChecks:
+              description: NodeHealthChecks contains the Consul health checks related
+                to this node.
               items:
                 properties:
                   checkID:
+                    description: CheckID is the ID of the Consul health check.
                     type: string
                   name:
+                    description: Name is the name of the Consul health check.
                     type: string
                   output:
+                    description: Output is the output of the Consul health check command.
+                      64 chars maximum
                     type: string
                   serviceID:
+                    description: ServiceID is the ID of the Consul service this check
+                      belongs.
                     type: string
                   serviceName:
+                    description: ServiceName is the name of the Consul service this
+                      check belongs.
                     type: string
                   status:
+                    description: Status is the status of the Consul health check.
+                      Can be "passing", "warning" or "critical"
                     type: string
                 required:
                 - checkID
@@ -93,18 +110,30 @@ spec:
                 type: object
               type: array
             nodeProperties:
+              description: NodeProperties contains the node information.
               properties:
                 address:
+                  description: Address is the node private address.
                   type: string
                 flavor:
+                  description: Flavor is the node flavor. Can be a cloud-provider
+                    flavor or a string combination of vCPU-Memory-DiskSize.
                   type: string
                 id:
+                  description: ID is the node ID on Consul. If the node is not registered,
+                    this field will be populated with "non-existent-machine".
                   type: string
                 image:
+                  description: Image is the base image from which the node has been
+                    launched.
                   type: string
                 node:
+                  description: Node is the node name on Consul. If the node is not
+                    registered, this field will be populated with "non-existent-machine".
                   type: string
                 publicAddress:
+                  description: PublicAddress is the node public address. Empty if
+                    the node have only the private IP.
                   type: string
               required:
               - id

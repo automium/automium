@@ -51,17 +51,26 @@ spec:
         spec:
           properties:
             env:
+              description: Env is an array of EnvVar used for configuration. Defined
+                in the Service.
               items:
                 type: object
               type: array
             flavor:
+              description: Flavor is the flavor which will be used for node instances.
+                Defined in the Service.
               type: string
             image:
+              description: Image is the full image name, populated by the source and
+                the version defined in the Service.
               type: string
             replicas:
+              description: Replicas is the desired number of replicas. Defined in
+                the Service.
               format: int64
               type: integer
             source:
+              description: Source is the application type defined in the Service.
               type: string
           required:
           - source
@@ -72,14 +81,20 @@ spec:
         status:
           properties:
             currentReplicas:
+              description: CurrentReplicas are the current active replicas.
               format: int64
               type: integer
             phase:
+              description: Phase is the service phase. It can be "Running", "Completed",
+                "Pending" or "Failed".
               type: string
             replicas:
+              description: Replicas are the desired active replicas.
               format: int64
               type: integer
             updatedReplicas:
+              description: CurrentReplicas are the current updated replicas with the
+                new spec.
               format: int64
               type: integer
           required:

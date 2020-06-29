@@ -62,17 +62,24 @@ spec:
         spec:
           properties:
             env:
+              description: Env is an array of EnvVar used for configuring the service.
               items:
                 type: object
               type: array
             extra:
+              description: Extra is an array of ExtraSpec used for configuring the
+                extra components, such as monitoring or backups, for this service.
               items:
                 properties:
                   name:
+                    description: Name is the extra component name.
                     type: string
                   parameters:
+                    description: Parameters is a map which can be used to further
+                      configure the extra component.
                     type: object
                   version:
+                    description: Version is the extra component version.
                     type: string
                 required:
                 - name
@@ -80,16 +87,22 @@ spec:
                 type: object
               type: array
             flavor:
+              description: Flavor is the flavor which will be used for node instances.
               type: string
             replicas:
+              description: Replicas is the number of service replicas.
               format: int64
               minimum: 0
               type: integer
             tags:
+              description: Tags is an optional field for service tagging. Not used
+                at the moment.
               items:
                 type: string
               type: array
             version:
+              description: Version is the image version which will be used for the
+                nodes.
               type: string
           required:
           - replicas
@@ -99,8 +112,12 @@ spec:
         status:
           properties:
             moduleRef:
+              description: ModuleRef contains the reference to the module used by
+                this service.
               type: string
             phase:
+              description: Phase is the service phase. It can be "Running", "Completed",
+                "Pending" or "Failed".
               type: string
           required:
           - phase
