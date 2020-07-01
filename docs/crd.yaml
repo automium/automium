@@ -3,11 +3,30 @@ info:
   version: 1.0.0
   title: Automium CRDs
   license:
-    name: MIT
+    name: Apache
+  description: |
+    # Introduction
+    Cloud Applications need a scalable and resilient infrastructure, not just a Kubernetes cluster that operates containers.
+    Automium is responsible for controlling the IaaS below it as well as exposing its own APIs to manage core and extras components described below.
 paths:
   /apis/core.automium.io/v1beta1/namespaces/{namespace}/services:
     get:
       summary: Services
+      description: |
+        Service is a core component of Automium. It's the CRD with which the user interacts in order to define a middleware, such as a Kubernetes cluster.
+        An example of CR could be the following:
+        ```
+        apiVersion: core.automium.io/v1beta1
+        kind: Service
+        metadata:
+          labels:
+            app: kubernetes-cluster
+          name: automium-cluster
+        spec:
+          flavor: e3standard.x4
+          replicas: 1
+          version: v1.16.4-1-7d8af23e
+        ```
       responses:
         '200':
           description: An array of Services
@@ -344,7 +363,7 @@ components:
               - image
               type: object
           type: object
-    Monitoring:  
+    Monitoring:
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
