@@ -21,10 +21,26 @@ paths:
         metadata:
           labels:
             app: kubernetes-cluster
-          name: automium-cluster
+          name: mycluster
         spec:
           flavor: e3standard.x4
           replicas: 1
+          version: v1.16.4-1-7d8af23e
+        ```
+        Linked services, such as the described cluster for other node pools, must use the specific environment variable "cluster_name", like in the following example of CR:
+        ```
+        apiVersion: core.automium.io/v1beta1
+        kind: Service
+        metadata:
+          labels:
+            app: kubernetes-nodepool
+          name: mynodepool
+        spec:
+          env:
+          - name: cluster_name
+            value: mycluster
+          flavor: e3standard.x5
+          replicas: 3
           version: v1.16.4-1-7d8af23e
         ```
       responses:
