@@ -143,6 +143,9 @@ components:
             submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
           type: string
         metadata:
+          description: 'In order to specify which application you want to deploy,
+            you need to add a label "app". Applications available: "kubernetes-cluster"
+            for a k8s control plane, and "kubernetes-nodepool" for a k8s node pool.'
           type: object
         spec:
           properties:

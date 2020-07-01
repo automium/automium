@@ -71,7 +71,8 @@ type ServiceStatus struct {
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase",description="The execution phase"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type Service struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// In order to specify which application you want to deploy, you need to add a label "app". Applications available: "kubernetes-cluster" for a k8s control plane, and "kubernetes-nodepool" for a k8s node pool.
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   ServiceSpec   `json:"spec,omitempty"`
