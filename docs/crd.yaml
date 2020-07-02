@@ -13,8 +13,13 @@ paths:
     get:
       summary: Services
       description: |
-        Service is a core component of Automium. It's the CRD with which the user interacts in order to define a middleware, such as a Kubernetes cluster.
-        An example of CR could be the following:
+        Automium provides composable and reusable services ready to be deployed in your infrastructure, such as a Kubernetes cluster.
+        Each service is built upon a proven process of Continuous Deployments in order to test and delivery 3 components:
+        - Ansible Role, versioned and described on GitHub with the service configurations. The role is publicly available also on Ansible Galaxy to simplify further usages.
+        - Cloud Image baked by the CI process. Every change to the configuration is tested and delivered as a Cloud Image to the Automium catalog.
+        - Terraform Module. Every service needs one or more infrastructure resources, such as a number of variable nodes when you deploy a cluster service. All the needed resources are described in a specific Terraform module.
+
+        Service is a core component of Automium API. It's the CRD with which the user interacts. An example of CR for creating a Kubernetes cluster could be the following:
         ```
         apiVersion: core.automium.io/v1beta1
         kind: Service
