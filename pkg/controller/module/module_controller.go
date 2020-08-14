@@ -426,7 +426,15 @@ func (r *ReconcileModule) manageNodesForModule(module *corev1beta1.Module) error
 			var specHostname string
 			switch appName {
 			case "kubernetes-cluster":
-				specHostname = fmt.Sprintf("%s-%s-%d", serviceName, serviceName, i)
+				clusterName := serviceName
+
+				for _, val := range module.Spec.Env {
+					if val.Name == "CLUSTER_NAME" {
+						clusterName = val.Value
+					}
+				}
+
+				specHostname = fmt.Sprintf("%s-%s-%d", clusterName, serviceName, i)
 			case "kubernetes-nodepool":
 				var clusterName string
 

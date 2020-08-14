@@ -170,11 +170,24 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 				Name:  "ETCD",
 				Value: "true",
 			},
-			{
+		}
+
+		// Check if a custom CLUSTER_NAME is defined in the service env
+		customClusterNameFound := false
+		for _, itm := range tfEnvVars {
+			if itm.Name == "CLUSTER_NAME" && itm.Value != "" {
+				customClusterNameFound = true
+				break
+			}
+		}
+
+		if !customClusterNameFound {
+			specificEnvVars = append(specificEnvVars, corev1.EnvVar{
 				Name:  "CLUSTER_NAME",
 				Value: instance.Name,
-			},
+			})
 		}
+
 		appProvisioner = "kubernetes"
 	case "kubernetes-nodepool":
 		specificEnvVars = []corev1.EnvVar{
