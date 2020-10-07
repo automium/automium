@@ -1,0 +1,28 @@
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdenyns
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDenyNS
+      validation:
+        openAPIV3Schema:
+          properties:
+            validNames:
+              type: array
+              items:
+                type: string
+  targets:
+  - rego: |
+      package k8sdenyns
+      valid_ns[name] = ns {
+        ns = input.parameters.validNames[name]
+        ns == input.review.object.metadata.namespace
+      }
+      violation[{"msg": msg}] {
+        count(valid_ns) == 0
+        msg := sprintf("The namespace %v is not allowed.", [input.review.object.metadata.namespace])
+      }
+    target: admission.k8s.gatekeeper.sh

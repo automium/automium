@@ -1,0 +1,13 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sDenyNS
+metadata:
+  name: force-automium-to-use-default-ns
+spec:
+  match:
+    kinds:
+    - apiGroups:
+      - core.automium.io
+      kinds:
+      - Service
+  parameters:
+    validName: default
