@@ -1,0 +1,19 @@
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: k8suniqueservice
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sUniqueService
+  targets:
+  - rego: |
+      package k8suniqueservice
+      violation[{"msg": msg}] {
+        name := input.review.object.metadata.name
+        services := data.inventory.namespace[ns][apiversion]["Service"][_]
+        services.metadata.name == name
+        msg := sprintf("The name %v is already taken.", [name])
+      }
+    target: admission.k8s.gatekeeper.sh

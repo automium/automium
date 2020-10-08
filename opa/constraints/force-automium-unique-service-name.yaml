@@ -1,7 +1,7 @@
 apiVersion: constraints.gatekeeper.sh/v1beta1
-kind: K8sDenyNS
+kind: k8suniqueservice
 metadata:
-  name: force-automium-to-use-default-ns
+  name: force-automium-unique-service-name
 spec:
   match:
     kinds:
@@ -9,6 +9,3 @@ spec:
       - core.automium.io
       kinds:
       - Service
-  parameters:
-    validNames:
-    - default
