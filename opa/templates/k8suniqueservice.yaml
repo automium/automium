@@ -11,6 +11,7 @@ spec:
   - rego: |
       package k8suniqueservice
       violation[{"msg": msg}] {
+        input.review.operation == "CREATE"
         name := input.review.object.metadata.name
         services := data.inventory.namespace[ns][apiversion]["Service"][_]
         services.metadata.name == name
