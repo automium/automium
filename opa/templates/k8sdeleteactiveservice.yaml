@@ -1,0 +1,18 @@
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdeleteactiveservice
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDeleteActiveService
+  targets:
+  - rego: |
+      package k8sdeleteactiveservice
+      violation[{"msg": msg}] {
+        input.review.operation == "DELETE"
+        input.review.object.spec.replicas > 0
+        msg := sprintf("Cannot delete an active service. The service has %v replicas.", [input.review.object.spec.replicas])
+      }
+    target: admission.k8s.gatekeeper.sh
